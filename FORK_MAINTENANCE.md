@@ -4,7 +4,7 @@ This document explains how we maintain the `kaiko-ai/Megatron-Bridge` fork of `N
 
 ## Why we fork
 
-We need fixes and features in Bridge faster than NVIDIA's ~2-month container release cadence. The fork lets us land a change once — it ships in our image the same day, and the same diff goes upstream as a PR. See kaiko-eng#33267 for the full rationale.
+We need fixes and features in Bridge faster than NVIDIA's ~2-month container release cadence. The fork lets us land a change once — it ships in our image the same day, and the same diff goes upstream as a PR. See [kaiko-ai/kaiko-eng#33267](https://github.com/kaiko-ai/kaiko-eng/issues/33267) for the full rationale.
 
 ## Branching Strategy
 
@@ -62,7 +62,7 @@ Before promoting the new SHA into the `kmbridge-nemo` image, run the smoke test 
 1. Branch off `main`: `git checkout -b feat/short-description main`
 2. Make the change. Keep it small — one logical change per PR so it can travel upstream as a single PR.
 3. **Sign your commits** (DCO): `git commit -s -m "[area] type: description"`. `area`/`type` follow [Bridge's CONTRIBUTING.md](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/CONTRIBUTING.md) (e.g. `[training] feat: add step-0 validation flag`).
-4. Open a PR targeting `main`. Apply the same labels Bridge expects upstream: `area:training`, plus `feature` / `bug` / `docs`. For VL-touching changes, also add `full-test-suite`.
+4. Open a PR targeting `main`. Apply the labels listed in [Repo configuration](#repo-configuration); for VL-touching changes, also apply `full-test-suite`.
 5. Install the same pre-commit hooks Bridge uses upstream (`pre-commit install` at the repo root) so formatting matches.
 6. After internal review and merge (squash), open the same diff as a PR against `NVIDIA-NeMo/Megatron-Bridge`. Link both PRs to each other.
 
@@ -72,7 +72,7 @@ When upstream merges, the commit becomes part of `upstream-track` on the next sy
 
 External contributors cannot trigger NVIDIA's CI. A maintainer has to approve every CI run on every PR. Most kaiko changes touch VL models, which means they need the heavy `full-test-suite` tier.
 
-In practice: "in-flight upstream → drops on next rebase" is **weeks, not days**. This is the main reason the fork exists — we don't have to wait.
+In practice: "in-flight upstream → drops on next rebase" is **weeks, not days**.
 
 ## Smoke test before promoting a fork SHA
 
@@ -80,12 +80,19 @@ A fork SHA only becomes the pin for the `kmbridge-nemo` image after it passes a 
 
 ## Internal review channel
 
-Discuss in-flight fork PRs in the `#project-nemo-contributors` Slack channel before opening upstream.
+Discuss fork PRs in the `#project-nemo-contributors` Slack channel before opening upstream.
+
+## Repo configuration
+
+- **Branch protection.** `main` requires PR + 1 approval, no force-push, no deletion. `upstream-track` allows force-push (the sync workflow needs it) but forbids deletion.
+- **Team access.** `@kaiko-ai/MLLM` has `write`. The CODEOWNERS team mention resolves through this grant.
+- **Labels.** `area:training`, `feature`, `bug`, `docs`, `full-test-suite` mirror upstream Bridge — apply them on our PRs the same way you would upstream.
+- **Merge style.** Auto-merge and auto-delete-branch-on-merge are enabled. Squash commits take the PR title as the subject and the PR body as the message.
 
 ## See also
 
-- kaiko-eng#33267 — fork policy and principles
-- kaiko-eng#33272 — initial setup (this fork)
+- [kaiko-ai/kaiko-eng#33267](https://github.com/kaiko-ai/kaiko-eng/issues/33267) — fork policy and principles
+- [kaiko-ai/kaiko-eng#33272](https://github.com/kaiko-ai/kaiko-eng/issues/33272) — initial setup (this fork)
 - Upstream: https://github.com/NVIDIA-NeMo/Megatron-Bridge
 - Upstream contributing guide: https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/CONTRIBUTING.md
 - Precedent: https://github.com/kaiko-ai/verl/blob/main/FORK_MAINTENANCE.md
