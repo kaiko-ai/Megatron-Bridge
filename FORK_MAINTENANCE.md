@@ -15,21 +15,35 @@ Two long-lived branches:
 
 `git log upstream-track..main --oneline` shows everything we have added on top of upstream. There is no separate patches file to keep in sync.
 
-## Remotes
+## First-time setup
+
+Run these once per clone:
 
 ```bash
 git clone --recurse-submodules https://github.com/kaiko-ai/Megatron-Bridge.git
 cd Megatron-Bridge
 git remote add upstream https://github.com/NVIDIA-NeMo/Megatron-Bridge.git
+
+# Format/lint hooks Bridge upstream uses
+pip install pre-commit
+pre-commit install
+
+# Auto-add Signed-off-by on every commit (DCO compliance)
+git config format.signoff true
 ```
 
-`origin` = our fork. `upstream` = NVIDIA-NeMo.
+After this:
+
+- `origin` points at our fork, `upstream` at `NVIDIA-NeMo/Megatron-Bridge`.
+- The Megatron-Core submodule is initialized (see below).
+- Every `git commit` runs ruff format / lint and the other hooks Bridge upstream uses.
+- Every commit message automatically carries a `Signed-off-by:` line.
+
+The DCO check in CI is a safety net — it should never fail if you ran the steps above.
 
 ## Submodule
 
-Bridge vendors Megatron-Core (Megatron-LM) as a git submodule at `3rdparty/Megatron-LM`. We do not fork Core separately — it follows whatever Bridge's submodule pin points at.
-
-Always clone with `--recurse-submodules`, or run `git submodule update --init` after a fresh clone.
+Bridge vendors Megatron-Core (Megatron-LM) at `3rdparty/Megatron-LM`. We do not fork Core separately — it follows whatever Bridge's submodule pin points at. If you cloned without `--recurse-submodules`, run `git submodule update --init`.
 
 ## Pinned versions
 
@@ -59,12 +73,11 @@ Before promoting the new SHA into the `kmbridge-nemo` image, run the smoke test 
 
 ## Workflow: adding a kaiko change
 
-1. Branch off `main`: `git checkout -b feat/short-description main`
+1. Branch off `main`: `git checkout -b feat/short-description main`.
 2. Make the change. Keep it small — one logical change per PR so it can travel upstream as a single PR.
-3. **Sign your commits** (DCO): `git commit -s -m "[area] type: description"`. `area`/`type` follow [Bridge's CONTRIBUTING.md](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/CONTRIBUTING.md) (e.g. `[training] feat: add step-0 validation flag`).
+3. Commit using Bridge's `[area] type: description` format per their [CONTRIBUTING.md](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/CONTRIBUTING.md) (e.g. `[training] feat: add step-0 validation flag`). Sign-off and pre-commit hooks run automatically if you completed the first-time setup.
 4. Open a PR targeting `main`. Apply the labels listed in [Repo configuration](#repo-configuration); for VL-touching changes, also apply `full-test-suite`.
-5. Install the same pre-commit hooks Bridge uses upstream (`pre-commit install` at the repo root) so formatting matches.
-6. After internal review and merge (squash), open the same diff as a PR against `NVIDIA-NeMo/Megatron-Bridge`. Link both PRs to each other.
+5. After internal review and merge (squash), open the same diff as a PR against `NVIDIA-NeMo/Megatron-Bridge`. Link both PRs to each other.
 
 When upstream merges, the commit becomes part of `upstream-track` on the next sync. Because upstream may reshape the diff during review, expect occasional conflicts on rebase — they are usually small.
 
