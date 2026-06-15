@@ -41,6 +41,7 @@ from megatron.bridge.training.config import (
     SchedulerConfig,
     TokenizerConfig,
     TrainingConfig,
+    ValidationConfig,
     _validate_and_sync_distributed_optimizer_settings,
     _validate_mixed_precision_consistency,
 )
@@ -507,6 +508,42 @@ class TestConfigContainerValidation:
         try:
             if expect_assertion_error:
                 with pytest.raises(AssertionError, match="is not divisible by"):
+                    container.validate()
+            else:
+                container.validate()  # Should pass without error
+        finally:
+            restore_get_world_size_safe(og_ws, cfg_mod)
+
+    def test_validation_config_validate_on_start_default(self):
+        """validate_on_start is a bridge addition defaulting to False and is settable."""
+        assert ValidationConfig().validate_on_start is False
+        assert ValidationConfig(validate_on_start=True).validate_on_start is True
+        # multiple_validation_sets is inherited from Megatron-Core's ValidationConfig.
+        assert ValidationConfig().multiple_validation_sets is False
+
+    @pytest.mark.parametrize(
+        "pipeline_model_parallel_size, expect_error",
+        [
+            (1, False),
+            (2, True),
+        ],
+    )
+    def test_multiple_validation_sets_rejects_pipeline_parallel(
+        self, monkeypatch, pipeline_model_parallel_size, expect_error
+    ):
+        """multiple_validation_sets must be rejected with pipeline parallelism (PP > 1)."""
+        gpt_model_cfg = create_test_gpt_config(
+            tensor_model_parallel_size=1,
+            pipeline_model_parallel_size=pipeline_model_parallel_size,
+            context_parallel_size=1,
+            pipeline_dtype=torch.bfloat16,
+        )
+        container, og_ws, cfg_mod = create_test_config_container(world_size_override=8, model_config=gpt_model_cfg)
+        container.validation.multiple_validation_sets = True
+
+        try:
+            if expect_error:
+                with pytest.raises(ValueError, match="multiple_validation_sets is not supported"):
                     container.validate()
             else:
                 container.validate()  # Should pass without error
