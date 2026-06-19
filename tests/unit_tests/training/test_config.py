@@ -521,17 +521,14 @@ class TestConfigContainerValidation:
         # multiple_validation_sets is inherited from Megatron-Core's ValidationConfig.
         assert ValidationConfig().multiple_validation_sets is False
 
-    @pytest.mark.parametrize(
-        "pipeline_model_parallel_size, expect_error",
-        [
-            (1, False),
-            (2, True),
-        ],
-    )
-    def test_multiple_validation_sets_rejects_pipeline_parallel(
-        self, monkeypatch, pipeline_model_parallel_size, expect_error
-    ):
-        """multiple_validation_sets must be rejected with pipeline parallelism (PP > 1)."""
+    @pytest.mark.parametrize("pipeline_model_parallel_size", [1, 2])
+    def test_multiple_validation_sets_allows_pipeline_parallel(self, monkeypatch, pipeline_model_parallel_size):
+        """multiple_validation_sets validates with any PP size.
+
+        Per-set evaluation runs an identical number of fully-flushed evaluate()
+        calls on every rank, so it stays collective-balanced under PP > 1; no
+        config guard rejects it.
+        """
         gpt_model_cfg = create_test_gpt_config(
             tensor_model_parallel_size=1,
             pipeline_model_parallel_size=pipeline_model_parallel_size,
@@ -542,11 +539,7 @@ class TestConfigContainerValidation:
         container.validation.multiple_validation_sets = True
 
         try:
-            if expect_error:
-                with pytest.raises(ValueError, match="multiple_validation_sets is not supported"):
-                    container.validate()
-            else:
-                container.validate()  # Should pass without error
+            container.validate()  # Should pass without error for any PP size
         finally:
             restore_get_world_size_safe(og_ws, cfg_mod)
 

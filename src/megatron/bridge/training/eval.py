@@ -332,9 +332,13 @@ def evaluate_validation_sets(
             metric namespace.
 
     Note:
-        Incompatible with pipeline parallelism (PP > 1): sequential ``evaluate()``
-        calls deadlock the pipeline scheduler. ``ConfigContainer`` validation
-        rejects ``multiple_validation_sets`` with PP > 1 up front.
+        Each set is evaluated with its own ``evaluate()`` call. Every rank runs
+        the same number of calls, each a fully-flushed pipeline schedule fronted
+        by a barrier and with the time-limit exit driven by a collective
+        all-reduce, so the loop stays collective-balanced under pipeline
+        parallelism (PP > 1). The named per-set iterators are built up front in
+        ``build_train_valid_test_data_iterators`` rather than lazily during eval,
+        avoiding per-stage divergence while ranks construct iterators.
     """
     writer = state.tensorboard_logger if write_to_tensorboard else None
     wandb_writer = state.wandb_logger
@@ -457,13 +461,14 @@ def evaluate_and_print_results(
     # top afterwards. Any other shape (a single iterator, or the VPP per-chunk
     # list) is just the combined iterator with no extra sets.
     named_data_iterators: list = []
+    combined_data_iterator = data_iterator
     if isinstance(data_iterator, tuple):
-        data_iterator, named_data_iterators = data_iterator
+        combined_data_iterator, named_data_iterators = data_iterator
 
     total_loss_dict, collected_non_loss_data, timelimit = evaluate(
         state,
         forward_step_func,
-        data_iterator,
+        combined_data_iterator,
         model,
         process_non_loss_data_func,
         config,
