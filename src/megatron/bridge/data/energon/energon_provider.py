@@ -35,6 +35,12 @@ class EnergonProvider(DatasetProvider):
     task_encoder: Optional[Any] = None
     # Enable batch-level online sequence packing
     pack_sequences_in_batch: bool = False
+    # Size of Energon's packing buffer. Required to enable Energon's sample-packing path: when
+    # None, Energon never calls the task encoder's select_samples_to_pack / pack_selected_samples
+    # hooks, so any packing_method set on the encoder is a silent no-op.
+    packing_buffer_size: Optional[int] = None
+    # Max samples loaded into memory per sequence (tar shard). None loads the whole shard at once.
+    max_samples_per_sequence: Optional[int] = None
 
     def build_datasets(self, context: DatasetBuildContext):
         assert self.path, "EnergonProvider.path must be set. Use CLI override: dataset.path=<path>"
@@ -47,6 +53,8 @@ class EnergonProvider(DatasetProvider):
             micro_batch_size=self.micro_batch_size,
             global_batch_size=self.global_batch_size,
             num_workers=self.num_workers,
+            packing_buffer_size=self.packing_buffer_size,
+            max_samples_per_sequence=self.max_samples_per_sequence,
             pg_collection=context.pg_collection,
         )
         # Return the train split un-wrapped (not iter(...)) so the downstream RerunDataIterator's
