@@ -1284,14 +1284,6 @@ class ConfigContainer(Container):
         else:
             validate_flex_dispatcher_backend(self.model)
 
-        if self.validation.multiple_validation_sets and self.model.pipeline_model_parallel_size > 1:
-            raise ValueError(
-                "multiple_validation_sets is not supported with pipeline parallelism "
-                "(pipeline_model_parallel_size > 1): sequential per-set evaluate() calls deadlock "
-                "the pipeline scheduler. Set pipeline_model_parallel_size=1 or disable "
-                "multiple_validation_sets."
-            )
-
         for f in fields(ValidationConfig):
             train_val = getattr(self.train, f.name, None)
             if train_val is not None:
