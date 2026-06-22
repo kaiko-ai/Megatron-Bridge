@@ -331,6 +331,13 @@ def evaluate_validation_sets(
         is_test: Whether this is test evaluation (vs validation); selects the
             metric namespace.
 
+    Raises:
+        Exception: Any failure inside a set's ``evaluate()`` propagates and
+            crashes all ranks. This is deliberate: ``evaluate()`` runs
+            collectives, so a rank that swallowed an error and skipped ahead
+            would desync the per-set call count and deadlock the others. Failing
+            loudly preserves the collective-balance invariant described below.
+
     Note:
         Each set is evaluated with its own ``evaluate()`` call. Every rank runs
         the same number of calls, each a fully-flushed pipeline schedule fronted
