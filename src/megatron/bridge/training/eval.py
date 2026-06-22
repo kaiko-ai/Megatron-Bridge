@@ -315,7 +315,7 @@ def evaluate_validation_sets(
     ``<namespace>/<key>-<name>`` (e.g. ``validation/lm loss-qa_blend``), where
     ``<namespace>`` is ``test`` when ``is_test`` else ``validation``. The name is
     bound to its iterator by the data builder, so there is no index-based name
-    lookup. A failing set is logged and skipped so training continues.
+    lookup.
 
     Args:
         state: The global state object.
@@ -359,29 +359,20 @@ def evaluate_validation_sets(
     namespace = "test" if is_test else "validation"
     step = state.train_state.step
     summary = f" {namespace} loss at {prefix} |"
+    # No per-set try/except: evaluate() runs collectives (all_reduce), so a
+    # rank-divergent failure (e.g. a corrupt sample on one rank) must crash all
+    # ranks rather than let the failing rank skip ahead into the next set's
+    # collective and deadlock. This matches single-dataset validation.
     for name, data_iterator in named_data_iterators:
-        try:
-            total_loss_dict, _, timelimit = evaluate(
-                state,
-                forward_step_func,
-                data_iterator,
-                model,
-                None,
-                config,
-                verbose=verbose,
-            )
-        except Exception as e:
-            print_rank_last(
-                f"Validation set '{name}' failed at step {step} "
-                f"({type(e).__name__}: {e}); skipping this set, training continues."
-            )
-            # evaluate() starts an "evaluate" timer on entry; if it raised before
-            # reaching .stop(), the timer is left started and the next set's
-            # evaluate() asserts "timer has already been started". Reset it.
-            eval_timer = state.timers("evaluate", log_level=0)
-            if getattr(eval_timer, "_started", False):
-                eval_timer.stop()
-            continue
+        total_loss_dict, _, timelimit = evaluate(
+            state,
+            forward_step_func,
+            data_iterator,
+            model,
+            None,
+            config,
+            verbose=verbose,
+        )
 
         if timelimit:
             return
