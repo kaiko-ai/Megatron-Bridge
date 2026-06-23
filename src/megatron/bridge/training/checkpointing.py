@@ -1207,9 +1207,14 @@ def maybe_save_dataloader_state(
     if not hasattr(train_iterator.iterable, "save_state"):
         raise RuntimeError(f"Could not find a save_state for the train_iterator of type {type(train_iterator)}")
 
-    # Resolve process groups and save dataloader state for each DP rank only once.
+    # Resolve process groups and write the per-DP-rank state from a single writer. Tensor-,
+    # pipeline-, and context-parallel ranks of a DP replica all hold the identical per-DP-rank
+    # state, so only the tp/pp/cp leader writes avoiding racing to write the same
+    # train_dataloader_dprank{dp}.pt file.
     pg_collection = pg_collection or get_pg_collection(model)
-    is_first_rank = (pg_collection.pp.rank() == 0) and (pg_collection.tp.rank() == 0)
+    is_first_rank = (
+        (pg_collection.pp.rank() == 0) and (pg_collection.tp.rank() == 0) and (pg_collection.cp.rank() == 0)
+    )
     if not is_first_rank:
         return
 
@@ -1252,9 +1257,7 @@ def maybe_load_dataloader_state(
     data-parallel rank, gated to a single model-parallel writer because the per-DP-rank state is
     identical across the tensor/pipeline/context ranks of a DP replica. Load, by contrast, restores
     on *every* rank: each tensor/pipeline/context rank pulls from its own data iterator (e.g.
-    ``qwen3_vl`` ``get_batch``), so all of them must be rewound to the saved position. Keying by the
-    pure DP rank (``pg_collection.dp.rank()``, excluding context parallelism) means context-parallel
-    ranks within a DP replica — which read the same data shard — restore from the same file.
+    ``qwen3_vl`` ``get_batch``), so all of them must be rewound to the saved position.
 
     Restore failure modes are deliberately loud. If the dataloader state directory is absent
     entirely, the checkpoint predates dataloader-state saving and the dataloader starts fresh. But
