@@ -35,9 +35,21 @@ class EnergonProvider(DatasetProvider):
     task_encoder: Optional[Any] = None
     # Enable batch-level online sequence packing
     pack_sequences_in_batch: bool = False
+    # Size of Energon's packing buffer. Required to enable Energon's sample-packing path: when
+    # None, Energon never calls the task encoder's select_samples_to_pack / pack_selected_samples
+    # hooks, so any packing_method set on the encoder is a silent no-op.
+    packing_buffer_size: Optional[int] = None
 
     def build_datasets(self, context: DatasetBuildContext):
         assert self.path, "EnergonProvider.path must be set. Use CLI override: dataset.path=<path>"
+        # Energon sample packing (packing_buffer_size) and megatron-bridge batch-level online packing
+        # should not be called simultaneously. 
+        if self.pack_sequences_in_batch and (self.packing_buffer_size or 0) > 0:
+            raise ValueError(
+                "pack_sequences_in_batch and packing_buffer_size are mutually exclusive: the former "
+                "enables megatron-bridge in-batch packing and the latter enables Energon sample "
+                "packing, so setting both packs the data twice. Disable one."
+            )
         dataset = EnergonMultiModalDataModule(
             path=self.path,
             tokenizer=context.tokenizer if context.tokenizer is not None else self.tokenizer,
@@ -47,6 +59,7 @@ class EnergonProvider(DatasetProvider):
             micro_batch_size=self.micro_batch_size,
             global_batch_size=self.global_batch_size,
             num_workers=self.num_workers,
+            packing_buffer_size=self.packing_buffer_size,
             pg_collection=context.pg_collection,
         )
         # Return the train split un-wrapped (not iter(...)) so the downstream RerunDataIterator's
