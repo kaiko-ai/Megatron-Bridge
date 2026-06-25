@@ -33,6 +33,7 @@ class EnergonProvider(DatasetProvider):
     num_workers: int_repr
     dataloader_type: str = "external"
     task_encoder: Optional[Any] = None
+
     # Enable in-batch sequence packing
     enable_in_batch_packing: bool = False
     # Active user: Qwen3-VL. Its step needs unpacked batch tensors and builds
@@ -42,6 +43,13 @@ class EnergonProvider(DatasetProvider):
     pad_to_max_length: bool = False
     pad_to_multiple_of: int = 128
     in_batch_packing_pad_to_multiple_of: int = 1
+
+    # Enable batch-level online sequence packing
+    pack_sequences_in_batch: bool = False
+    # Size of Energon's packing buffer. Required to enable Energon's sample-packing path: when
+    # None, Energon never calls the task encoder's select_samples_to_pack / pack_selected_samples
+    # hooks, so any packing_method set on the encoder is a silent no-op.
+    packing_buffer_size: Optional[int] = None
 
     def _sync_task_encoder_sequence_batching(self) -> None:
         if self.task_encoder is None:
@@ -58,6 +66,20 @@ class EnergonProvider(DatasetProvider):
     def build_datasets(self, context: DatasetBuildContext):
         assert self.path, "EnergonProvider.path must be set. Use CLI override: dataset.path=<path>"
         self._sync_task_encoder_sequence_batching()
+        # Energon sample packing (packing_buffer_size) and megatron-bridge batch-level online
+        # packing (pack_sequences_in_batch) should not be enabled at once, or data gets packed twice.
+        if self.pack_sequences_in_batch and (self.packing_buffer_size or 0) > 0:
+            raise ValueError(
+                "pack_sequences_in_batch and packing_buffer_size are mutually exclusive: the former "
+                "enables megatron-bridge in-batch packing and the latter enables Energon sample "
+                "packing, so setting both packs the data twice. Disable one."
+            )
+        if (
+            self.pack_sequences_in_batch
+            and self.task_encoder is not None
+            and hasattr(self.task_encoder, "pack_sequences")
+        ):
+            self.task_encoder.pack_sequences = True
         dataset = EnergonMultiModalDataModule(
             path=self.path,
             tokenizer=context.tokenizer if context.tokenizer is not None else self.tokenizer,
@@ -67,6 +89,7 @@ class EnergonProvider(DatasetProvider):
             micro_batch_size=self.micro_batch_size,
             global_batch_size=self.global_batch_size,
             num_workers=self.num_workers,
+            packing_buffer_size=self.packing_buffer_size,
             pg_collection=context.pg_collection,
         )
         # EnergonMultiModalDataModule.test_dataloader() returns None (no distinct test split);
