@@ -150,7 +150,7 @@ def get_checkpoint_tracker_filename(checkpoints_path: str) -> str:
     Returns:
         The full path to the checkpoint tracker file (e.g., latest_checkpointed_iteration.txt).
     """
-    return join_paths(checkpoints_path, "latest_checkpointed_iteration.txt")
+    return join_paths(checkpoints_path, "latest_checkpointed_iteration_REGRESSION_DEMO.txt")
 
 
 _ITERATION_DIR_MARKERS = (
