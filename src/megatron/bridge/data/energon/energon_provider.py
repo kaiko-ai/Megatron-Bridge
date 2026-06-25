@@ -13,12 +13,40 @@
 # limitations under the License.
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Optional
 
+import yaml
 from torch import int_repr
 
 from megatron.bridge.data.base import DatasetBuildContext, DatasetProvider
 from megatron.bridge.data.energon.base_energon_datamodule import EnergonMultiModalDataModule
+
+
+def _parse_val_blend_entries(metadataset_path: str) -> list[tuple[str, str]]:
+    """Extract validation sub-blend ``(name, absolute_path)`` pairs from a MetadatasetV2 YAML.
+
+    Returns one entry per ``splits.val.blend[]`` item. Names are the sub-blend path stems
+    (e.g. ``qa_blend`` from ``./qa_blend.yaml``); relative paths are resolved against the
+    metadataset's directory, absolute paths kept as-is.
+
+    Raises:
+        ValueError: if the metadataset has no ``splits.val.blend`` entries.
+    """
+    base_dir = Path(metadataset_path).parent
+    with open(metadataset_path) as f:
+        meta = yaml.safe_load(f)
+
+    val_blend = meta.get("splits", {}).get("val", {}).get("blend", [])
+    if not val_blend:
+        raise ValueError(f"No splits.val.blend entries found in {metadataset_path}")
+
+    entries: list[tuple[str, str]] = []
+    for entry in val_blend:
+        raw_path = entry["path"]
+        resolved = str(base_dir / raw_path) if not Path(raw_path).is_absolute() else raw_path
+        entries.append((Path(raw_path).stem, resolved))
+    return entries
 
 
 @dataclass(kw_only=True)
@@ -50,6 +78,8 @@ class EnergonProvider(DatasetProvider):
     # None, Energon never calls the task encoder's select_samples_to_pack / pack_selected_samples
     # hooks, so any packing_method set on the encoder is a silent no-op.
     packing_buffer_size: Optional[int] = None
+    # Evaluate each metadataset val sub-blend separately. Pairs with ValidationConfig.multiple_validation_sets.
+    multiple_validation_sets: bool = False
 
     def _sync_task_encoder_sequence_batching(self) -> None:
         if self.task_encoder is None:
@@ -63,6 +93,26 @@ class EnergonProvider(DatasetProvider):
         )
         self.task_encoder.in_batch_packing_pad_to_multiple_of = self.in_batch_packing_pad_to_multiple_of
 
+    def _make_datamodule(self, path: str, context: DatasetBuildContext) -> EnergonMultiModalDataModule:
+        if (
+            self.pack_sequences_in_batch
+            and self.task_encoder is not None
+            and hasattr(self.task_encoder, "pack_sequences")
+        ):
+            self.task_encoder.pack_sequences = True
+        return EnergonMultiModalDataModule(
+            path=path,
+            tokenizer=context.tokenizer if context.tokenizer is not None else self.tokenizer,
+            image_processor=self.image_processor,
+            seq_length=self.seq_length,
+            task_encoder=self.task_encoder,
+            micro_batch_size=self.micro_batch_size,
+            global_batch_size=self.global_batch_size,
+            num_workers=self.num_workers,
+            packing_buffer_size=self.packing_buffer_size,
+            pg_collection=context.pg_collection,
+        )
+
     def build_datasets(self, context: DatasetBuildContext):
         assert self.path, "EnergonProvider.path must be set. Use CLI override: dataset.path=<path>"
         self._sync_task_encoder_sequence_batching()
@@ -74,24 +124,19 @@ class EnergonProvider(DatasetProvider):
                 "enables megatron-bridge in-batch packing and the latter enables Energon sample "
                 "packing, so setting both packs the data twice. Disable one."
             )
-        if (
-            self.pack_sequences_in_batch
-            and self.task_encoder is not None
-            and hasattr(self.task_encoder, "pack_sequences")
-        ):
-            self.task_encoder.pack_sequences = True
-        dataset = EnergonMultiModalDataModule(
-            path=self.path,
-            tokenizer=context.tokenizer if context.tokenizer is not None else self.tokenizer,
-            image_processor=self.image_processor,
-            seq_length=self.seq_length,
-            task_encoder=self.task_encoder,
-            micro_batch_size=self.micro_batch_size,
-            global_batch_size=self.global_batch_size,
-            num_workers=self.num_workers,
-            packing_buffer_size=self.packing_buffer_size,
-            pg_collection=context.pg_collection,
-        )
+        dataset = self._make_datamodule(self.path, context)
+
+        valid = iter(dataset.val_dataloader())
+        if self.multiple_validation_sets:
+            # Blended loader plus one val-only loader per sub-blend (sub-blends have no train split).
+            valid = (
+                valid,
+                [
+                    (name, iter(self._make_datamodule(blend_path, context).val_dataloader()))
+                    for name, blend_path in _parse_val_blend_entries(self.path)
+                ],
+            )
+
         # EnergonMultiModalDataModule.test_dataloader() returns None (no distinct test split);
         # honor that instead of aliasing the validation loader as a fake test set, which would
         # otherwise report validation metrics as test metrics whenever eval_iters > 0.
@@ -102,6 +147,6 @@ class EnergonProvider(DatasetProvider):
         # checkpoint save and resume. Wrapping it in iter() would strip that interface.
         return (
             dataset.train_dataloader(),
-            iter(dataset.val_dataloader()),
+            valid,
             iter(test_dataloader) if test_dataloader is not None else None,
         )
