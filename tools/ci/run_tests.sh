@@ -12,12 +12,14 @@ BASE_DIR="${1:?usage: run_tests.sh <base_dir> <head_dir>}"
 HEAD_DIR="${2:?usage: run_tests.sh <base_dir> <head_dir>}"
 
 # Run the unit suite inside the image against a checkout; all output -> log file.
+# --continue-on-collection-errors: keep CPU-unimportable modules from aborting the
+# run (exit 2); they become per-item ERRORs the regression diff handles normally.
 run_suite() {  # $1 = source dir, $2 = log path
   docker run --rm -v "$1:/branch:ro" -w /branch \
     -e PYTHONPATH=/branch/src -e PYTHONDONTWRITEBYTECODE=1 -e CUDA_VISIBLE_DEVICES="" \
     "${IMAGE}" \
     pytest tests/unit_tests --ignore=tests/unit_tests/diffusion -m "not pleasefixme" \
-      -p no:cacheprovider -q -rfE >"$2" 2>&1
+      --continue-on-collection-errors -p no:cacheprovider -q -rfE >"$2" 2>&1
 }
 
 # pytest exits 0 (all passed) or 1 (some failed); both mean the suite ran, so the
