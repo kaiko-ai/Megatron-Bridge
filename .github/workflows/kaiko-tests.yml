@@ -3,9 +3,18 @@
 name: kaiko tests
 
 on:
+  # SECURITY: keep this as `pull_request`. Never switch to `pull_request_target`:
+  # that runs with the base repo's secrets in the context of untrusted PR code,
+  # turning this job (which checks out and executes PR contents) into a token/
+  # secret exfiltration vector.
   pull_request:
     branches: [main]
   workflow_dispatch:
+
+# Cancel superseded runs, i.e. don't let stale commits launch runs that pile up on a busy PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -34,7 +43,11 @@ jobs:
           echo "after reclaim:"; df -h /
 
       - name: Log in to ghcr
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull image
         run: time docker pull "${IMAGE}"

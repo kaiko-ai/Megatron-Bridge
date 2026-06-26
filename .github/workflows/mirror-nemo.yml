@@ -15,10 +15,14 @@ jobs:
     strategy:
       max-parallel: 1 # avoid ghcr 429s from concurrent blob uploads
       matrix:
-        tag: ["26.06", "26.04"]
+        tag: ["26.06"]
     steps:
       - name: Log in to ghcr
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Copy nemo -> ghcr (retry on 429)
         run: |
