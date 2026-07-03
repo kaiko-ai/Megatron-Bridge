@@ -276,13 +276,13 @@ def get_batch(data_iterator: Iterable, cfg: ConfigContainer, use_mtp: bool = Fal
         is_last_pp_stage=is_last,
     )
     enable_packing = getattr(cfg.dataset, "pack_sequences_in_batch", False)
-    # Data-side (offline) packing: the dataloader already packed sequences and emitted
-    # cu_seqlens. Skip runtime padding/packing and let the metadata flow to the model.
-    has_data_side_packing = batch.get("cu_seqlens") is not None
-    if enable_packing and has_data_side_packing:
-        raise ValueError("Both pack_sequences_in_batch and data-side packing (cu_seqlens) are active; use one.")
+    # Precomputed varlen cu_seqlens from the dataloader (padding_free / block_causal packing).
+    # When present, skip runtime padding and let the metadata flow to the model.
+    has_cu_seqlens = batch.get("cu_seqlens") is not None
+    if enable_packing and has_cu_seqlens:
+        raise ValueError("Both pack_sequences_in_batch and precomputed cu_seqlens packing are active; use one.")
 
-    if not enable_packing and not has_data_side_packing:
+    if not enable_packing and not has_cu_seqlens:
         # PP needs fixed activation shapes across stages. EP/HybridEP also needs
         # matching token dimensions across the expert group for routing metadata.
         requires_fixed_seq_len = (
@@ -389,7 +389,7 @@ def get_batch(data_iterator: Iterable, cfg: ConfigContainer, use_mtp: bool = Fal
         # # Add packing metadata
         logger.debug(f"Packed batch: cu_seqlens={cu_seqlens.tolist()}, max_seqlen={max_seqlen}")
     else:
-        # Data-side cu_seqlens flow through; None when no packing is active.
+        # Precomputed cu_seqlens flow through; None for cat / unpacked batches.
         cu_seqlens = batch.get("cu_seqlens")
         max_seqlen = batch.get("max_seqlen")
 
