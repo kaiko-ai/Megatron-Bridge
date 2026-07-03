@@ -80,6 +80,10 @@ class EnergonProvider(DatasetProvider):
     packing_buffer_size: Optional[int] = None
     # Evaluate each metadataset val sub-blend separately. Pairs with ValidationConfig.multiple_validation_sets.
     multiple_validation_sets: bool = False
+    # When False, the dataset's attention_mask is forwarded to the model (needed for packing
+    # modes that supply a block-causal / padding mask); when True it is dropped and the attn
+    # backend autogenerates one. Read by vlm_step.get_batch.
+    skip_getting_attention_mask_from_dataset: bool = True
 
     def _sync_task_encoder_sequence_batching(self) -> None:
         if self.task_encoder is None:

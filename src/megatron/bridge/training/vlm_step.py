@@ -181,6 +181,14 @@ def get_batch(data_iterator: Iterable, cfg: ConfigContainer, use_mtp: bool = Fal
         is_last_pp_stage=is_last,
     )
 
+    enable_packing = getattr(cfg.dataset, "pack_sequences_in_batch", False)
+    # Data-side (Energon / offline) packing surfaces precomputed varlen metadata under the
+    # _PACKED_SEQ_DEVICE_KEYS (cu_seqlens_q, ...). When present it flows to the model via the
+    # packed_seq_params below; guard against stacking it on top of online in-batch packing.
+    has_cu_seqlens = any(batch.get(key) is not None for key in _PACKED_SEQ_DEVICE_KEYS)
+    if enable_packing and has_cu_seqlens:
+        raise ValueError("Both pack_sequences_in_batch and precomputed cu_seqlens packing are active; use one.")
+
     visual_inputs = batch.get("visual_inputs")
 
     return (
