@@ -28,12 +28,9 @@ def _parse_val_blend_entries(metadataset_path: str) -> list[tuple[str, str]]:
 
     Returns one entry per ``splits.val.blend[]`` item. The name is the entry's
     ``subflavors.loss_name`` when set, otherwise the path stem (e.g. ``qa_blend`` from
-    ``./qa_blend.yaml``). ``loss_name`` lets a blend attach a meaningful val-loss label to an
-    otherwise opaque path: Kaiko gold-layer webdatasets end in ``<asset>/delta<N>_v<hex>``,
-    whose stem ``delta0_v72030cff`` names the delta version rather than the asset. ``subflavors``
-    is a native Energon field, so it is tolerated by Energon's own metadataset parser and
-    ignored by cooker routing (subset match on required keys). Relative paths are resolved
-    against the metadataset's directory; absolute paths are kept as-is.
+    ``./qa_blend.yaml``); ``loss_name`` lets a blend override the label when the stem is not
+    descriptive. Relative paths are resolved against the metadataset's directory; absolute
+    paths are kept as-is.
 
     Raises:
         ValueError: if the metadataset has no ``splits.val.blend`` entries.
