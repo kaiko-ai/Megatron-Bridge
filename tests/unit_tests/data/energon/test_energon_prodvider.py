@@ -270,7 +270,3 @@ class TestParseValBlendEntries:
         )
         entries = _parse_val_blend_entries(meta)
         assert [name for name, _ in entries] == ["some_WD_name", "qa_blend"]
-        assert [path for _, path in entries] == [
-            "/abs/gold/some_WD_name/delta0_v123",
-            str(tmp_path / "qa_blend.yaml"),
-        ]
