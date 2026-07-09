@@ -53,6 +53,22 @@ from megatron.bridge.models.qwen_vl.modelling_qwen3_vl.transformer_config import
 from megatron.bridge.models.qwen_vl.modelling_qwen3_vl.utils import Qwen3VLVisionPatchMerger
 
 
+def _layer_needs_cp_local_packed_seq_params(layer: nn.Module) -> bool:
+    """Return True for hybrid GDN/SSM layers that need CP-local packed metadata.
+
+    Standard attention layers occupy the ``self_attention`` slot with a
+    ``SelfAttention`` subclass and rely on Transformer Engine's flash-attention
+    THD-CP path, which consumes the global ``cu_seqlens``. GDN (Gated Delta Net)
+    layers occupy the same slot with a non-``SelfAttention`` module and validate
+    ``cu_seqlens[-1]`` against the CP-sharded local length, so they need the
+    rebased metadata instead.
+    """
+    from megatron.core.transformer.attention import SelfAttention
+
+    self_attention = getattr(layer, "self_attention", None)
+    return self_attention is not None and not isinstance(self_attention, SelfAttention)
+
+
 class Qwen3VLVisionTransformerBlock(TransformerBlock):
     """
     Vision Transformer Block for Qwen3VL vision model.
@@ -108,6 +124,7 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
         rotary_pos_emb: Tensor,
         attention_bias: Tensor,
         packed_seq_params: PackedSeqParams,
+        gdn_packed_seq_params: Optional[PackedSeqParams],
         use_inner_fp8_context: bool,
     ):
         """Forward method with activation checkpointing."""
@@ -133,7 +150,12 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
                         and hasattr(layer, "config")
                         and getattr(layer.config, "cuda_graph_impl", "none") == "transformer_engine"
                     )
-                    layer_packed_seq_params = None if layer_uses_te_cudagraph else packed_seq_params
+                    effective_packed_seq_params = (
+                        gdn_packed_seq_params
+                        if gdn_packed_seq_params is not None and _layer_needs_cp_local_packed_seq_params(layer)
+                        else packed_seq_params
+                    )
+                    layer_packed_seq_params = None if layer_uses_te_cudagraph else effective_packed_seq_params
                     with inner_fp8_context:
                         hidden_states, context = layer(
                             hidden_states=hidden_states,
@@ -239,6 +261,7 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
         attention_bias: Optional[Tensor] = None,
         inference_context: Optional[BaseInferenceContext] = None,
         packed_seq_params: Optional[PackedSeqParams] = None,
+        gdn_packed_seq_params: Optional[PackedSeqParams] = None,
         sequence_len_offset: Optional[Tensor] = None,
         *,
         inference_params: Optional[BaseInferenceContext] = None,
@@ -324,6 +347,7 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
                     rotary_pos_emb=rotary_pos_emb,
                     attention_bias=attention_bias,
                     packed_seq_params=packed_seq_params,
+                    gdn_packed_seq_params=gdn_packed_seq_params,
                     use_inner_fp8_context=use_inner_fp8_context,
                 )
             else:
@@ -347,7 +371,12 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
                             and hasattr(layer, "config")
                             and getattr(layer.config, "cuda_graph_impl", "none") == "transformer_engine"
                         )
-                        layer_packed_seq_params = None if layer_uses_te_cudagraph else packed_seq_params
+                        effective_packed_seq_params = (
+                            gdn_packed_seq_params
+                            if gdn_packed_seq_params is not None and _layer_needs_cp_local_packed_seq_params(layer)
+                            else packed_seq_params
+                        )
+                        layer_packed_seq_params = None if layer_uses_te_cudagraph else effective_packed_seq_params
                         hidden_states, context = layer(
                             hidden_states=hidden_states,
                             attention_mask=attention_mask,

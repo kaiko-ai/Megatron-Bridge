@@ -12,13 +12,186 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
+import sys
 
-from megatron.bridge.training.utils.packed_seq_utils import get_packed_seq_params
+import torch
+from megatron.core.packed_seq_params import PackedSeqParams
+
+from megatron.bridge.training.utils.packed_seq_utils import (
+    get_cp_local_packed_seq_params,
+    get_packed_seq_cp_partition_indices,
+    get_packed_seq_params,
+    get_packed_seq_q_cu_seqlens,
+    repack_mcore_thd_position_ids,
+    unpack_mcore_thd_tensor_for_position_ids,
+)
+
+
+def test_get_cp_local_packed_seq_params_rebases_to_local_shard():
+    # Docs A[0:6] B[6:8] C[8:12]; global boundaries [0, 6, 8, 12].
+    cu = torch.tensor([0, 6, 8, 12], dtype=torch.int32)
+    psp = PackedSeqParams(cu_seqlens_q=cu, cu_seqlens_kv=cu, qkv_format="thd")
+
+    # Contiguous CP=2 partition: rank 0 owns tokens 0..5, rank 1 owns 6..11.
+    rank0 = get_cp_local_packed_seq_params(psp, torch.arange(0, 6))
+    rank1 = get_cp_local_packed_seq_params(psp, torch.arange(6, 12))
+
+    assert rank0.cu_seqlens_q.tolist() == [0, 6]
+    assert rank1.cu_seqlens_q.tolist() == [0, 2, 6]
+    # The GDN invariant: last boundary equals the CP-local sequence length.
+    assert int(rank0.cu_seqlens_q[-1]) == 6
+    assert int(rank1.cu_seqlens_q[-1]) == 6
+    assert rank0.cu_seqlens_q.dtype == cu.dtype
+
+
+def test_get_cp_local_packed_seq_params_handles_scattered_tail_document():
+    # Off-by-few signature from the bug report: the last document contributes
+    # only a few tokens that cross the CP shard boundary.
+    cu = torch.tensor([0, 3648, 7186, 9290, 16417, 16420], dtype=torch.int32)
+    psp = PackedSeqParams(cu_seqlens_q=cu, cu_seqlens_kv=cu, qkv_format="thd")
+
+    index = torch.cat([torch.arange(0, 3648, 2), torch.arange(7186, 9290), torch.arange(16417, 16420)])
+    local = get_cp_local_packed_seq_params(psp, index)
+
+    # cu_seqlens[-1] must match the local token count, and no zero-length
+    # segments may survive.
+    assert int(local.cu_seqlens_q[-1]) == index.numel()
+    diffs = local.cu_seqlens_q[1:] - local.cu_seqlens_q[:-1]
+    assert bool((diffs > 0).all())
+
+
+def test_get_cp_local_packed_seq_params_rebases_padded_offsets():
+    actual = torch.tensor([0, 6, 8, 12], dtype=torch.int32)
+    padded = torch.tensor([0, 8, 12, 16], dtype=torch.int32)
+    psp = PackedSeqParams(
+        cu_seqlens_q=actual,
+        cu_seqlens_kv=actual,
+        cu_seqlens_q_padded=padded,
+        cu_seqlens_kv_padded=padded,
+        qkv_format="thd",
+    )
+    local = get_cp_local_packed_seq_params(psp, torch.arange(0, 8))
+    # Indices address the padded stream (doc A spans padded positions 0..7).
+    # Padded boundaries rebase to [0, 8]; the unpadded length is capped at the
+    # 6 real tokens of doc A.
+    assert local.cu_seqlens_q_padded.tolist() == [0, 8]
+    assert local.cu_seqlens_kv_padded.tolist() == [0, 8]
+    assert local.cu_seqlens_q.tolist() == [0, 6]
+
+
+def test_get_packed_seq_q_cu_seqlens_prefers_padded_boundaries():
+    actual = torch.tensor([0, 6, 14], dtype=torch.int32)
+    padded = torch.tensor([0, 8, 16], dtype=torch.int32)
+
+    unpadded, physical = get_packed_seq_q_cu_seqlens(PackedSeqParams(cu_seqlens_q=actual, cu_seqlens_q_padded=padded))
+    assert unpadded is actual
+    assert physical is padded
+
+    unpadded, physical = get_packed_seq_q_cu_seqlens(PackedSeqParams(cu_seqlens_q=actual))
+    assert unpadded is actual
+    assert physical is actual
+
+
+def test_get_packed_seq_cp_partition_indices_uses_padded_boundaries(monkeypatch):
+    actual = torch.tensor([0, 6, 14], dtype=torch.int32)
+    padded = torch.tensor([0, 8, 16], dtype=torch.int32)
+    seen = {}
+
+    class FakeTransformerEngineTorch:
+        @staticmethod
+        def thd_get_partitioned_indices(cu_seqlens, total_tokens, cp_size, cp_rank):
+            seen["cu_seqlens"] = cu_seqlens
+            seen["total_tokens"] = total_tokens
+            seen["cp_size"] = cp_size
+            seen["cp_rank"] = cp_rank
+            return torch.tensor([0, 1, 14, 15], dtype=torch.int64)
+
+    monkeypatch.setitem(sys.modules, "transformer_engine_torch", FakeTransformerEngineTorch)
+
+    packed_seq_params = PackedSeqParams(
+        qkv_format="thd",
+        cu_seqlens_q=actual,
+        cu_seqlens_kv=actual,
+        cu_seqlens_q_padded=padded,
+        cu_seqlens_kv_padded=padded,
+    )
+
+    index = get_packed_seq_cp_partition_indices(
+        packed_seq_params,
+        total_tokens=16,
+        cp_size=4,
+        cp_rank=0,
+        device=torch.device("cpu"),
+    )
+
+    assert torch.equal(seen["cu_seqlens"], padded)
+    assert seen["total_tokens"] == 16
+    assert seen["cp_size"] == 4
+    assert seen["cp_rank"] == 0
+    assert torch.equal(index, torch.tensor([0, 1, 14, 15], dtype=torch.long))
+
+
+def test_unpack_and_repack_mcore_thd_position_rows():
+    packed_seq_params = PackedSeqParams(
+        qkv_format="thd",
+        cu_seqlens_q=torch.tensor([0, 2, 5], dtype=torch.int32),
+        cu_seqlens_q_padded=torch.tensor([0, 4, 8], dtype=torch.int32),
+    )
+    packed_tokens = torch.tensor([[10, 11, 0, 0, 20, 21, 22, 0]])
+
+    rows, attention_mask, padded_starts, lengths = unpack_mcore_thd_tensor_for_position_ids(
+        packed_tokens, packed_seq_params
+    )
+
+    assert rows.tolist() == [[10, 11, 0], [20, 21, 22]]
+    assert attention_mask.tolist() == [[True, True, False], [True, True, True]]
+    assert padded_starts == [0, 4]
+    assert lengths == [2, 3]
+
+    row_position_ids = torch.tensor(
+        [
+            [[0, 1, 0], [0, 1, 2]],
+            [[0, 1, 0], [10, 11, 12]],
+            [[0, 1, 0], [20, 21, 22]],
+        ]
+    )
+    packed_position_ids = repack_mcore_thd_position_ids(
+        row_position_ids,
+        padded_starts=padded_starts,
+        lengths=lengths,
+        total_length=packed_tokens.size(1),
+    )
+
+    assert packed_position_ids.tolist() == [
+        [[0, 1, 0, 0, 0, 1, 2, 0]],
+        [[0, 1, 0, 0, 10, 11, 12, 0]],
+        [[0, 1, 0, 0, 20, 21, 22, 0]],
+    ]
 
 
 class TestGetPackedSeqParams:
     """Test suite for get_packed_seq_params function."""
+
+    def test_current_mcore_metadata_fields(self):
+        """Test get_packed_seq_params with current MCore metadata field names."""
+        batch = {
+            "cu_seqlens_q": torch.IntTensor([0, 120, 245, 370]),
+            "cu_seqlens_kv": torch.IntTensor([0, 120, 245, 370]),
+            "cu_seqlens_q_padded": torch.IntTensor([0, 128, 256, 384]),
+            "cu_seqlens_kv_padded": torch.IntTensor([0, 128, 256, 384]),
+            "max_seqlen_q": torch.tensor(128),
+            "max_seqlen_kv": torch.tensor(128),
+        }
+
+        result = get_packed_seq_params(batch)
+
+        torch.testing.assert_close(result.cu_seqlens_q, batch["cu_seqlens_q"])
+        torch.testing.assert_close(result.cu_seqlens_kv, batch["cu_seqlens_kv"])
+        torch.testing.assert_close(result.cu_seqlens_q_padded, batch["cu_seqlens_q_padded"])
+        torch.testing.assert_close(result.cu_seqlens_kv_padded, batch["cu_seqlens_kv_padded"])
+        assert result.max_seqlen_q == 128
+        assert result.max_seqlen_kv == 128
+        assert result.qkv_format == "thd"
 
     def test_without_cu_seqlens_unpadded(self):
         """Test get_packed_seq_params when cu_seqlens_unpadded is NOT present.
