@@ -291,14 +291,30 @@ def slice_batch_for_context_parallel(
     else:
         # For BSHD format, use standard zigzag slicing
         cp_group = pg_collection.cp
+
+        # Ensure tensors have the minimal number of leading batch/sequence dims
+        # expected by Megatron's CP partitioning utilities. For pretraining
+        # zigzag splitting the utilities expect tensors to have at least
+        # dimensionality: labels/loss_mask/position_ids -> [B, S, ...] (dim>=2)
+        # attention_mask -> [B, 1, S, S] or at least dim>=3 for safe reshaping
+        def _ensure_min_dim(tensor, min_dim: int):
+            if tensor is None:
+                return None
+            # If tensor has fewer dims than required, add leading singleton dims
+            while tensor.dim() < min_dim:
+                tensor = tensor.unsqueeze(0)
+            return tensor
+
+        batch_for_cp = {
+            "decoder_input": _ensure_min_dim(inputs_embeds, 2),
+            "labels": _ensure_min_dim(labels, 2),
+            "loss_mask": _ensure_min_dim(loss_mask, 2),
+            "position_ids": _ensure_min_dim(position_ids, 2),
+            "attention_mask": _ensure_min_dim(attention_mask, 3),
+        }
+
         cp_batch = get_batch_on_this_cp_rank(
-            {
-                "decoder_input": inputs_embeds,
-                "labels": labels,
-                "loss_mask": loss_mask,
-                "position_ids": position_ids,
-                "attention_mask": attention_mask,
-            },
+            batch_for_cp,
             is_hybrid_cp=False,
             cp_group=cp_group,
         )

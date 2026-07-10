@@ -270,6 +270,8 @@ def forward_step(
     }
 
     original_tokens = tokens.clone()
+    original_labels = labels.clone() if labels is not None else None
+    original_loss_mask = loss_mask.clone() if loss_mask is not None else None
     forward_args = get_batch_on_this_cp_rank(
         forward_args,
         is_hybrid_cp=False,
@@ -277,6 +279,8 @@ def forward_step(
     )
     forward_args["packed_seq_params"] = None
     forward_args["input_ids"] = original_tokens
+    forward_args["labels"] = original_labels
+    forward_args["loss_mask"] = original_loss_mask
     # calculate position_ids in model forward
     forward_args["position_ids"] = None
     if pack_sequences_in_batch:

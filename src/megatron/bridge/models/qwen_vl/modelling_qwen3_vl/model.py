@@ -50,6 +50,7 @@ from megatron.bridge.models.qwen_vl.modelling_qwen3_vl.utils import (
     split_deepstack_embs,
 )
 from megatron.bridge.models.qwen_vl.modelling_qwen3_vl.vision_model import Qwen3VLVisionModel
+from megatron.bridge.utils.common_utils import slice_batch_for_context_parallel
 
 
 class Qwen3VLModel(MegatronModule):
@@ -501,8 +502,16 @@ class Qwen3VLModel(MegatronModule):
                 combined_embeddings[vision_mask] = vision_embeds
                 combined_embeddings = combined_embeddings.transpose(0, 1).contiguous()
 
-            if combined_embeddings is not None and cp_size > 1 and packed_seq_params is None:
-                combined_embeddings = split_data_cp_rank(combined_embeddings, cp_size, 0, cp_rank)
+            if cp_size > 1 and packed_seq_params is None:
+                combined_embeddings, labels, loss_mask, position_ids, attention_mask = slice_batch_for_context_parallel(
+                    inputs_embeds=combined_embeddings,
+                    labels=labels,
+                    loss_mask=loss_mask,
+                    position_ids=position_ids,
+                    attention_mask=attention_mask,
+                    packed_seq_params=None,
+                    pg_collection=self.pg_collection,
+                )
             if packed_seq_params is not None:
                 if attention_mask is None:
                     attention_mask = torch.ones_like(input_ids, dtype=torch.bool, device=input_ids.device)
