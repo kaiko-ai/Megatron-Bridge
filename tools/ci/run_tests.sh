@@ -15,11 +15,24 @@ HEAD_DIR="${2:?usage: run_tests.sh <base_dir> <head_dir>}"
 # --continue-on-collection-errors: keep CPU-unimportable modules from aborting the
 # run (exit 2); they become per-item ERRORs the regression diff handles normally.
 run_suite() {  # $1 = source dir, $2 = log path
+  # Expose the checkout's own Megatron-LM submodule ahead of the image's installed
+  # megatron.core/megatron.training. Each branch pins its own MCore, and the base
+  # image can lag it (e.g. nemo:26.06 predates megatron.training.models.gpt, which
+  # was upstreamed in #4472) — without this every module importing training.config
+  # collapses on the newer branch, drowning the regression diff in false positives.
+  #
+  # We symlink ONLY the submodule's `megatron` package onto the path, not the whole
+  # submodule root: that root also ships top-level `examples`/`docs`/`tools`, and its
+  # regular `examples` package would shadow the repo's `examples.conversion.*` imports.
   docker run --rm -v "$1:/branch:ro" -w /branch \
-    -e PYTHONPATH=/branch/src -e PYTHONDONTWRITEBYTECODE=1 -e CUDA_VISIBLE_DEVICES="" \
+    -e PYTHONDONTWRITEBYTECODE=1 -e CUDA_VISIBLE_DEVICES="" \
     "${IMAGE}" \
-    pytest tests/unit_tests --ignore=tests/unit_tests/diffusion -m "not pleasefixme" \
-      --continue-on-collection-errors -p no:cacheprovider -q -rfE >"$2" 2>&1
+    bash -c '
+      mkdir -p /mcore && ln -sf /branch/3rdparty/Megatron-LM/megatron /mcore/megatron
+      export PYTHONPATH=/mcore:/branch/src:/branch
+      pytest tests/unit_tests --ignore=tests/unit_tests/diffusion -m "not pleasefixme" \
+        --continue-on-collection-errors -p no:cacheprovider -q -rfE
+    ' >"$2" 2>&1
 }
 
 # pytest exits 0 (all passed) or 1 (some failed); both mean the suite ran, so the
@@ -33,8 +46,13 @@ require_clean_run() {  # $1 = exit code, $2 = source dir, $3 = log path
   fi
 }
 
-# Extract failing pytest node IDs from a log, sorted and de-duplicated.
-extract_failures() { grep -E '^(FAILED|ERROR) ' "$1" | awk '{print $2}' | sort -u; }
+# Extract failing pytest node IDs from a log, sorted and de-duplicated. The 2nd
+# field must look like a pytest node ID (contains a path with "/" and ends in
+# .py, optionally with a ::node suffix) — this rejects framework log lines that
+# also start with "ERROR " (e.g. "ERROR 07-10 10:54 [config.py:29] ...").
+extract_failures() {
+  grep -E '^(FAILED|ERROR) ' "$1" | awk '{print $2}' | grep -E '\.py(::|$)' | sort -u
+}
 
 run_suite "${BASE_DIR}" base.log
 require_clean_run $? "${BASE_DIR}" base.log

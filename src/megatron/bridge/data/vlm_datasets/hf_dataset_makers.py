@@ -24,7 +24,7 @@ from typing import Any, Dict, List
 
 from datasets import concatenate_datasets, load_dataset
 
-from megatron.bridge.data.vlm_datasets.token_utils import json2token
+from megatron.bridge.data.token_utils import json2token
 from megatron.bridge.utils.common_utils import resolve_path
 
 
