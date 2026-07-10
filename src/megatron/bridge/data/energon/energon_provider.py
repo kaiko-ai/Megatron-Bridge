@@ -73,6 +73,10 @@ class EnergonProvider(DatasetProvider):
     pad_to_max_length: bool = False
     pad_to_multiple_of: int = 128
     in_batch_packing_pad_to_multiple_of: int = 1
+    # Size of Energon's packing buffer. Required to enable Energon's sample-packing path: when
+    # None, Energon never calls the task encoder's select_samples_to_pack / pack_selected_samples
+    # hooks, so any packing_method set on the encoder is a silent no-op.
+    packing_buffer_size: Optional[int] = None
 
     def _sync_task_encoder_sequence_batching(self) -> None:
         if self.task_encoder is None:

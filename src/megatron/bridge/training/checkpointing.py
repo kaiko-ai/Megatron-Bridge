@@ -138,6 +138,10 @@ _NON_PERSISTENT_CKPT_SUBDIR = "non_persistent"
 _DIRECT_ITERATION_DIR_SENTINEL = -2
 
 HF_WEIGHTS_SUBDIR = "hf"
+# Subdirectory of the model checkpoint dir where dataloader stream-position state is colocated by
+# default (currently only Megatron Energon). Used to derive dataloader_save / dataloader_load when
+# those config fields are left unset.
+DATALOADER_STATE_SUBDIR = "energon"
 
 
 # ============================================================================

@@ -534,6 +534,17 @@ def evaluate_and_print_results(
     mlflow_writer = state.mlflow_logger
     comet_logger = state.comet_logger
 
+    # Multiple validation sets: the validation data builder hands us a
+    # (combined_iterator, [(name, iterator), ...]) tuple. The combined iterator
+    # is evaluated and logged exactly like the single-set case below (the
+    # aggregate "lm loss validation"); the named per-set losses are appended on
+    # top afterwards. Any other shape (a single iterator, or the VPP per-chunk
+    # list) is just the combined iterator with no extra sets.
+    named_data_iterators: list = []
+    combined_data_iterator = data_iterator
+    if isinstance(data_iterator, tuple):
+        combined_data_iterator, named_data_iterators = data_iterator
+
     total_loss_dict, collected_non_loss_data, timelimit = evaluate(
         state,
         forward_step_func,
