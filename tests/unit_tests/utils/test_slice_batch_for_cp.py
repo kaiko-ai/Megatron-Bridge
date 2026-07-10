@@ -181,7 +181,7 @@ class TestSliceBatchForContextParallelBSHD:
             "megatron.bridge.utils.common_utils.get_batch_on_this_cp_rank",
             side_effect=mock_get_batch,
         ):
-            *_, out_labels, _, _, out_input_ids = slice_batch_for_context_parallel(
+            _, out_labels, _, _, _, out_input_ids = slice_batch_for_context_parallel(
                 inputs_embeds=inputs_embeds,
                 labels=labels,
                 loss_mask=torch.ones(batch_size, seq_len),
