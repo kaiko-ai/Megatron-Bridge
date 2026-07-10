@@ -319,8 +319,13 @@ def test_deepseek_v3_pipeline_layout_keeps_default_mtp_with_loss():
 
 def _build_deepseek_v4_recipe(name: str, monkeypatch: pytest.MonkeyPatch):
     mod = importlib.import_module("megatron.bridge.recipes.deepseek.deepseek_v4")
+<<<<<<< HEAD
     patch_recipe_module_global(monkeypatch, mod, "AutoBridge", _FakeBridge)
     patch_recipe_module_global(monkeypatch, mod, "deepseek_v4_supports_blackwell_fused_kernels", lambda: True)
+=======
+    monkeypatch.setattr(mod, "AutoBridge", _FakeBridge)
+    monkeypatch.setattr(mod, "deepseek_v4_supports_blackwell_fused_kernels", lambda: True)
+>>>>>>> main
     return getattr(mod, name)()
 
 
@@ -411,8 +416,13 @@ def test_deepseek_v4_recipes_disable_blackwell_only_fusions_when_unavailable(
     recipe_name: str, monkeypatch: pytest.MonkeyPatch
 ):
     mod = importlib.import_module("megatron.bridge.recipes.deepseek.deepseek_v4")
+<<<<<<< HEAD
     patch_recipe_module_global(monkeypatch, mod, "AutoBridge", _FakeBridge)
     patch_recipe_module_global(monkeypatch, mod, "deepseek_v4_supports_blackwell_fused_kernels", lambda: False)
+=======
+    monkeypatch.setattr(mod, "AutoBridge", _FakeBridge)
+    monkeypatch.setattr(mod, "deepseek_v4_supports_blackwell_fused_kernels", lambda: False)
+>>>>>>> main
 
     cfg = getattr(mod, recipe_name)()
 

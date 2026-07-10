@@ -151,20 +151,35 @@ def main() -> None:
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
+<<<<<<< HEAD
     if args.lora_on_language_model or args.lora_on_vision_model:
         cfg: ConfigContainer = nemotron_nano_v2_vl_12b_peft_config()
         _apply_lora_component_selection(
             cfg,
+=======
+    config_kwargs = {
+        "hf_model_path": args.hf_model_path,
+        "pretrained_checkpoint": args.pretrained_checkpoint,
+    }
+    if args.lora_on_language_model or args.lora_on_vision_model:
+        cfg: ConfigContainer = nemotron_nano_v2_vl_12b_peft_config(
+            **config_kwargs,
+>>>>>>> main
             lora_on_language_model=args.lora_on_language_model,
             lora_on_vision_model=args.lora_on_vision_model,
         )
         logger.info("Loaded base configuration for PEFT")
     else:
+<<<<<<< HEAD
         cfg = nemotron_nano_v2_vl_12b_sft_config()
         logger.info("Loaded base configuration for SFT")
 
     cfg.dataset.hf_processor_path = args.hf_model_path
     cfg.checkpoint.pretrained_checkpoint = args.pretrained_checkpoint
+=======
+        cfg = nemotron_nano_v2_vl_12b_sft_config(**config_kwargs)
+        logger.info("Loaded base configuration for SFT")
+>>>>>>> main
 
     if get_rank_safe() == 0:
         cfg.print_yaml()

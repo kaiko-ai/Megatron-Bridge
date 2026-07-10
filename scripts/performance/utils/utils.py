@@ -109,11 +109,19 @@ class WorkloadBaseConfig:
     num_distributed_optimizer_instances: int | None = None
 
     # MoE configuration
+<<<<<<< HEAD
     moe_flex_dispatcher_backend: str | None = None
     moe_a2a_overlap: bool | None = False
     cutedsl_fused_grouped_mlp: bool | None = False
     fp8_dot_product_attention: bool | None = None
     peft: str | None = None
+=======
+    moe_flex_dispatcher_backend: Optional[str] = None
+    moe_a2a_overlap: Optional[bool] = False
+    cutedsl_fused_grouped_mlp: Optional[bool] = False
+    fp8_dot_product_attention: Optional[bool] = None
+    peft: Optional[str] = None
+>>>>>>> main
 
     # Pipeline parallelism layout
     pp_layout: str | None = None

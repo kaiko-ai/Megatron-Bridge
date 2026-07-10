@@ -651,12 +651,16 @@ def num_floating_point_operations(
             cfg.model.num_attention_heads if cfg.model.num_query_groups is None else cfg.model.num_query_groups
         )
 
+<<<<<<< HEAD
         dataset_cfg = getattr(cfg, "dataset", None)
         hf_dataset_cfg = getattr(dataset_cfg, "hf_dataset", None)
         hf_dataset_name = getattr(hf_dataset_cfg, "dataset_name", None) or getattr(
             hf_dataset_cfg, "path_or_dataset", None
         )
         is_squad = getattr(dataset_cfg, "dataset_name", hf_dataset_name) in ("squad", "rajpurkar/squad")
+=======
+        is_squad = getattr(getattr(cfg, "dataset", None), "dataset_name", None) in ("squad", "rajpurkar/squad")
+>>>>>>> main
         hf_model_id = getattr(cfg.model, "hf_model_id", None)
         is_llama3_70b = hf_model_id is not None and "Meta-Llama-3-70B" in hf_model_id
         packed_specs = (

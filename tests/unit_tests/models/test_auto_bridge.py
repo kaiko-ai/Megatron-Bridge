@@ -38,8 +38,11 @@ from megatron.bridge.models.conversion.auto_bridge import (
     AutoBridge,
     _config_disables_mtp,
     _drop_readonly_config_properties,
+<<<<<<< HEAD
     _model_omits_mtp,
     _mtp_source_key_prefixes,
+=======
+>>>>>>> main
     _saved_config_disables_mtp,
 )
 from megatron.bridge.models.gpt_provider import GPTModelProvider

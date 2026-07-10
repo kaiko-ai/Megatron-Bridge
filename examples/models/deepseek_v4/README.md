@@ -6,7 +6,7 @@ The bridge supports four published variants out of the same code path. The on-di
 
 ## MCore Checkout
 
-The pretraining recipes were tested with Megatron-LM `dev` commit `35f36c7c9dba` plus PR [#4839](https://github.com/NVIDIA/Megatron-LM/pull/4839) (`f04b762406f0` in the OCI test checkout). The Megatron-LM copy inside the current NeMo FW container is not expected to work for these recipes.
+The DeepSeek V4 pretraining recipes require Megatron-LM `dev` support that is newer than the release-branch main pin. Use the Bridge dev commit switch before running these recipes; it checks out the commit recorded in `.dev.commit` (currently `2f1004963dcb1718804f3b858f5fb2fc73819694`). Run these recipes in the NeMo FW 26.06 container after switching to the dev MCore checkout; the Megatron-LM copy inside the container is not expected to work for these recipes.
 
 ```bash
 ./scripts/switch_mcore.sh dev
@@ -76,7 +76,11 @@ GPUs per node differ by hardware, so 32 GPUs means a different node count:
 | GB200 NVL | 4 | 8 | `--nodes=8 --gpus-per-node=4` (default) |
 | H100/H200 | 8 | 4 | `--nodes=4 --gpus-per-node=8` |
 
+<<<<<<< HEAD
 **Sequences are unpacked (SBHD).** The CSA/DSA indexer asserts `packed_seq_params is None` (`csa.py`), so packed/THD sequences are not yet supported on the sparse layers. The recipes ship an unpacked SQuAD config; do not pass `--packed_sequence`. Select another built-in source with `dataset.hf_dataset.dataset_name=gsm8k` (HF) or use `--dataset llm-finetune-preloaded dataset.dataset_root=<path>` (JSONL) — both stay unpacked by default.
+=======
+**Sequences are unpacked (SBHD).** The CSA/DSA indexer asserts `packed_seq_params is None` (`csa.py`), so packed/THD sequences are not yet supported on the sparse layers. The recipes ship an unpacked SQuAD config; do not pass `--packed_sequence`. Point at your own data with `dataset.dataset_name=gsm8k` (HF) or `--dataset llm-finetune-preloaded dataset.dataset_root=<path>` (JSONL) — both stay unpacked by default.
+>>>>>>> main
 
 **Eval sizing.** Each evaluation draws `validation.eval_iters × global_batch_size` samples; if that exceeds your validation/test split the eval hangs trying to form a batch. `slurm_sft.sh` defaults to a small `EVAL_ITERS=2` and `DO_TEST=false` (the end-of-run test eval is the usual culprit on small test sets) — raise them only when your splits are large enough.
 

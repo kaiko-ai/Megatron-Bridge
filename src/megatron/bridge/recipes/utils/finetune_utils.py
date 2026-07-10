@@ -119,9 +119,19 @@ def default_squad_config(
         dataset_kwargs["pad_to_max_length"] = True
         offline_packing_specs = PackedSequenceSpecs(packed_sequence_size=seq_length, pad_seq_to_mult=pad_seq_to_mult)
 
+<<<<<<< HEAD
     return _text_hf_dataset_config(
         source=HFDatasetSourceConfig(dataset_name="squad"),
         preprocessing=PromptCompletionSFTPreprocessingConfig(separator=" "),
+=======
+    # Use 'batch' sampler for variable-length finetuning
+    # Samples full global batch to ensure consistent padding across all microbatches
+    dataloader_type = "batch"
+
+    return HFDatasetConfig(
+        dataset_name="rajpurkar/squad",
+        process_example_fn=process_squad_example,
+>>>>>>> main
         seq_length=seq_length,
         enable_offline_packing=packed_sequence,
         offline_packing_specs=offline_packing_specs,

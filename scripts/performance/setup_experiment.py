@@ -32,10 +32,18 @@ from nemo_run.config import get_nemorun_home
 
 try:
     from argument_parser import NUM_GPUS_PER_NODE_MAP, parse_cli_args
+<<<<<<< HEAD
+=======
+    from utils.evaluate import calc_convergence_and_performance
+>>>>>>> main
     from utils.executors import kubeflow_executor, slurm_executor
     from utils.utils import get_exp_name_config, select_config_variant_interactive
 except (ImportError, ModuleNotFoundError):
     from .argument_parser import NUM_GPUS_PER_NODE_MAP, parse_cli_args
+<<<<<<< HEAD
+=======
+    from .utils.evaluate import calc_convergence_and_performance
+>>>>>>> main
     from .utils.executors import kubeflow_executor, slurm_executor
     from .utils.utils import get_exp_name_config, select_config_variant_interactive
 
@@ -53,6 +61,15 @@ try:
     from perf_plugins import NsysPlugin, PerfEnvPlugin, PyTorchProfilerPlugin
 except (ImportError, ModuleNotFoundError):
     from .perf_plugins import NsysPlugin, PerfEnvPlugin, PyTorchProfilerPlugin
+<<<<<<< HEAD
+=======
+
+try:
+    from utils.csp_plugins import EKSEnvPlugin, GKEEnvPlugin
+except (ImportError, ModuleNotFoundError):
+    from .utils.csp_plugins import EKSEnvPlugin, GKEEnvPlugin
+
+>>>>>>> main
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
 ENTRYPOINT_PERFORMANCE = "run_script.py"
@@ -100,6 +117,7 @@ def _filter_run_script_args(argv: List[str]) -> List[str]:
     return filtered_args
 
 
+<<<<<<< HEAD
 def _build_csp_plugin(csp: str) -> Any:
     """Build a CSP plugin lazily so Slurm/login-node launch does not import Kubeflow helpers."""
     try:
@@ -124,6 +142,8 @@ def _calc_convergence_and_performance(**kwargs: Any) -> Any:
     return calc_convergence_and_performance(**kwargs)
 
 
+=======
+>>>>>>> main
 def wait_for_logs_to_settle(glob_pattern: str, timeout_s: int = 180, stable_s: int = 10, poll_s: int = 3) -> List[str]:
     """Re-glob ``glob_pattern`` and wait until the matched log files stop growing.
 
@@ -294,9 +314,13 @@ def is_flaky_failure(log_file_path: str) -> bool:
         or "illegal memory access" in log
         or "illegal instruction" in log
         or "torch.distributed.DistNetworkError" in log
+<<<<<<< HEAD
         or "torch.distributed.DistBackendError" in log
         or "ncclRemoteError" in log
         or "Watchdog caught collective operation timeout" in log
+=======
+        or "ncclRemoteError" in log
+>>>>>>> main
         or "Segmentation fault" in log
         or "found NaN in" in log
         or "For debugging consider passing CUDA_LAUNCH_BLOCKING=1" in log
@@ -394,7 +418,11 @@ def maybe_increase_n_attempts_on_flaky_failure(
         return n_attempts
     if is_long_convergence_run and made_progress:
         return n_attempts
+<<<<<<< HEAD
     if any(is_flaky_failure(p) for p in log_file_paths):
+=======
+    if is_flaky_failure(log_file_paths[-1]):
+>>>>>>> main
         n_attempts += 1  # flaky: retry, bounded by max_retries
     else:
         # non-flaky: give up now. max_retries + 1 (not max_retries) so the outer
@@ -517,7 +545,10 @@ def main(
             and config_variant != "large_scale"
         )
         or (model_family_name == "llama" and task == "pretrain" and gpu == "b300")
+<<<<<<< HEAD
         or (model_family_name == "kimi" and task == "pretrain" and gpu == "b300")
+=======
+>>>>>>> main
     ):
         enable_pct_binding = False
 
@@ -665,6 +696,7 @@ def main(
 
     plugins = []
 
+<<<<<<< HEAD
     # Long-convergence runs are split across walltime slices and resume from the last
     # checkpoint each slice. Without a preemption signal, Slurm hard-kills the slice at
     # the time limit before a checkpoint is written, so no progress persists and the
@@ -679,6 +711,15 @@ def main(
     # arch/recipe/perf env stays in PerfEnvPlugin / the recipe.
     if csp is not None:
         plugins.append(_build_csp_plugin(csp))
+=======
+    # CSP fabric plugins (Kubeflow only; inert on Slurm via their isinstance guard):
+    # aws -> EKSEnvPlugin (EFA), gcp -> GKEEnvPlugin (gIB). Networking/fabric only;
+    # arch/recipe/perf env stays in PerfEnvPlugin / the recipe.
+    if csp == "aws":
+        plugins.append(EKSEnvPlugin())
+    elif csp == "gcp":
+        plugins.append(GKEEnvPlugin())
+>>>>>>> main
 
     if not use_recipes:
         plugins.append(
@@ -864,7 +905,11 @@ def main(
                     else None
                 )
 
+<<<<<<< HEAD
                 is_testing_passed, error_msg, merged_values = _calc_convergence_and_performance(
+=======
+                is_testing_passed, error_msg, merged_values = calc_convergence_and_performance(
+>>>>>>> main
                     model_family_name=model_family_name,
                     model_recipe_name=model_recipe_name,
                     assets_dir=os.path.join(job_dir, exp_name),

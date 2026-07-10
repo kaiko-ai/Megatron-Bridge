@@ -15,6 +15,11 @@
 """Unit tests for Qwen3VL text model forward behavior."""
 
 from types import SimpleNamespace
+<<<<<<< HEAD
+=======
+
+import torch
+>>>>>>> main
 
 import torch
 from megatron.core.models.gpt.gpt_model import GPTModel
@@ -130,6 +135,7 @@ def test_mtp_sequence_parallel_embedding_scatter_uses_tp_group(monkeypatch):
 
     assert output == "ok"
     assert calls["group"] is expected_group
+<<<<<<< HEAD
 
 
 def test_mtp_uses_padded_boundaries_for_packed_token_rolling():
@@ -251,3 +257,5 @@ def test_tied_non_mtp_state_dict_delegates_to_gpt_model(monkeypatch):
         "language_model.embedding.word_embeddings.weight",
         metadata,
     )
+=======
+>>>>>>> main

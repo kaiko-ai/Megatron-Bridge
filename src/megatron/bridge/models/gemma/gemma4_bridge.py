@@ -170,11 +170,20 @@ class Gemma4Bridge(MegatronModelBridge):
     _CONDITIONAL_MOE_FIELDS = frozenset({"num_moe_experts", "moe_router_topk", "moe_ffn_hidden_size"})
 
     def _should_map_hf_config_field(self, hf_config: Any, hf_name: str, megatron_name: str, value: Any) -> bool:
+<<<<<<< HEAD
+=======
+        """Gate Gemma4 conditional MoE fields on the HF MoE block flag."""
+>>>>>>> main
         if megatron_name in self._CONDITIONAL_MOE_FIELDS:
             return getattr(hf_config, "enable_moe_block", True)
         return super()._should_map_hf_config_field(hf_config, hf_name, megatron_name, value)
 
+<<<<<<< HEAD
     def provider_bridge(self, hf_pretrained: PreTrainedCausalLM) -> "Gemma4ModelProvider | Gemma4DenseProvider":
+=======
+    def provider_bridge(self, hf_pretrained: PreTrainedCausalLM) -> Gemma4ModelProvider:
+        """Convert HuggingFace config to Gemma4ModelProvider."""
+>>>>>>> main
         hf_config = hf_pretrained.config
         if not getattr(hf_config, "enable_moe_block", False):
             self._is_dense = True

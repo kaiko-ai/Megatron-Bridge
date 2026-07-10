@@ -195,6 +195,7 @@ class TestDoRAFinetune:
             num_workers=1,
         )
 
+<<<<<<< HEAD
     def _write_sft_dataset(self, base_dir):
         """Create a tiny local SFT dataset shared by all distributed ranks."""
         dataset_root = os.path.join(base_dir, "sft_data")
@@ -211,6 +212,13 @@ class TestDoRAFinetune:
         """Create a local SFT dataset configuration."""
         return GPTSFTDatasetConfig(
             dataset_root=dataset_root,
+=======
+    def _create_squad_dataset_config(self, seq_length, seed=5678):
+        """Create a SQuAD dataset configuration."""
+        return HFDatasetConfig(
+            dataset_name="rajpurkar/squad",
+            process_example_fn=process_squad_example,
+>>>>>>> main
             seq_length=seq_length,
             seed=seed,
             dataloader_type="single",

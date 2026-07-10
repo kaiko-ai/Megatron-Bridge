@@ -166,11 +166,20 @@ class TestQwen2AudioSftConfig:
 
         cfg = _qwen2_audio_module.qwen2_audio_7b_sft_config()
 
+<<<<<<< HEAD
         assert isinstance(cfg.dataset, DirectHFSFTDatasetConfig)
         assert cfg.dataset.source.dataset_name == "cv17"
         assert cfg.dataset.hf_processor_path == "Qwen/Qwen2-Audio-7B-Instruct"
         assert cfg.dataset.source.split is None
         assert cfg.dataset.validation_source.split == "validation"
+=======
+        assert isinstance(cfg.dataset, HFDatasetConversationProvider)
+        assert cfg.dataset.maker_name == "make_cv17_dataset"
+        assert cfg.dataset.hf_processor_path == "Qwen/Qwen2-Audio-7B-Instruct"
+        assert cfg.dataset.maker_kwargs["path_or_dataset"] == "ysdede/commonvoice_17_tr_fixed"
+        assert cfg.dataset.maker_kwargs["split"] == "train"
+        assert cfg.dataset.val_maker_kwargs["split"] == "validation"
+>>>>>>> main
 
     def test_sft_config_full_sft_uses_low_lr(self):
         """When peft is None (full SFT), the entry point picks lr=5e-6."""

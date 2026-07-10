@@ -311,7 +311,13 @@ config = ConfigContainer(
         lr_warmup_iters=100,
         lr_decay_iters=1000,
     ),
+<<<<<<< HEAD
     dataset=GPTSFTDatasetConfig(
+=======
+    dataset=HFDatasetConfig(
+        dataset_name="rajpurkar/squad",
+        process_example_fn=process_squad_example,
+>>>>>>> main
         seq_length=512,
         hf_dataset=HFDatasetSourceConfig(dataset_name="squad"),
         preprocessing=PromptCompletionSFTPreprocessingConfig(separator=" "),

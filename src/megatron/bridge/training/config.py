@@ -38,10 +38,11 @@ from megatron.training.config import DistributedInitConfig as MTrainDistributedI
 from megatron.training.config import LoggerConfig as MTrainLoggerConfig
 from megatron.training.config import ProfilingConfig as MTrainProfilingConfig
 from megatron.training.config import RerunStateMachineConfig as MTrainRerunStateMachineConfig
-from megatron.training.config import RNGConfig, ValidationConfig
+from megatron.training.config import RNGConfig
 from megatron.training.config import SchedulerConfig as MTrainSchedulerConfig
 from megatron.training.config import StragglerDetectionConfig as MTrainStragglerDetectionConfig
 from megatron.training.config import TrainingConfig as MTrainTrainingConfig
+from megatron.training.config import ValidationConfig as MTrainValidationConfig
 
 from megatron.bridge.data.base import (
     DataloaderConfig,
@@ -184,6 +185,78 @@ class RerunStateMachineConfig(MTrainRerunStateMachineConfig):
     this multiple of the max observed loss over the sample window."""
 
 
+<<<<<<< HEAD
+=======
+@dataclass(kw_only=True)
+class DataloaderConfig:
+    """Base configuration for data loading."""
+
+    dataloader_type: Optional[Literal["single", "cyclic", "batch", "external"]] = None
+    """Dataloader type: 'single' for single pass, 'cyclic' for multiple passes with shuffling,
+    'batch' for global batch sampling (used in fine-tuning), or 'external' for custom dataloaders."""
+
+    num_workers: int = 2
+    """Dataloader number of workers."""
+
+    data_sharding: bool = True
+    """Disable data sharding."""
+
+    pin_memory: bool = True
+    """Whether to pin memory during data loading for faster GPU training."""
+
+    drop_last: bool = True
+    """Whether to drop the last incomplete batch."""
+
+    persistent_workers: bool = True
+    """Whether to keep data loading workers persistent across epochs.
+    Automatically set to False when num_workers is 0."""
+
+    trust_remote_code: Optional[bool] = None
+    """Whether remote code execution should be trusted for a given HF path."""
+
+    dataloader_save: str | None = None
+    """Directory to save dataloader stream-position state into during checkpointing (currently only
+    Energon's ``SavableDataLoader``), so a resumed run continues over the same data instead of
+    restarting from an arbitrary position. When ``None`` (the default) and the dataloader supports
+    state saving, it is colocated under an ``energon`` subdirectory of ``checkpoint.save``. Has no
+    effect for dataloaders that do not support state saving."""
+
+    dataloader_load: str | None = None
+    """Directory to restore dataloader stream-position state from on resume. When ``None`` (the
+    default), it is colocated under an ``energon`` subdirectory of ``checkpoint.load``. If that
+    directory does not exist (e.g. a checkpoint saved before this feature) the dataloader starts
+    fresh; if it exists but the current rank's state file is missing, resume fails loudly rather
+    than silently changing the data order."""
+
+    def finalize(self):
+        """Finalize dataloader config field constraints."""
+        if self.num_workers == 0 and self.persistent_workers:
+            self.persistent_workers = False
+
+
+@dataclass(frozen=True)
+class DatasetBuildContext:
+    """Interface that encapsulates framework internals.
+
+    This context provides metadata needed to build datasets
+    while hiding implementation details of the framework.
+
+    Attributes:
+        train_samples: Number of samples for training dataset
+        valid_samples: Number of samples for validation dataset
+        test_samples: Number of samples for test dataset
+        tokenizer: Optional tokenizer instance for text processing
+        pg_collection: Optional process group collection for distributed training
+    """
+
+    train_samples: int
+    valid_samples: int
+    test_samples: int
+    tokenizer: Optional[MegatronTokenizer] = None
+    pg_collection: Optional[ProcessGroupCollection] = None
+
+
+>>>>>>> main
 @dataclass(frozen=True)
 class OptimizerConfigOverrideProviderContext:
     """Context for providing config overrides."""
@@ -464,6 +537,16 @@ class TrainingConfig(MTrainTrainingConfig):
             assert self.global_batch_size is not None, "global_batch_size must be set when using train_samples"
             self.train_iters = self.train_samples // self.global_batch_size
             print_rank_0(f"Setting training iterations to {self.train_iters} based on {self.train_samples} samples")
+
+
+@dataclass(kw_only=True)
+class ValidationConfig(MTrainValidationConfig):
+    """Bridge validation config, extending Megatron-Core's with extra options."""
+
+    validate_on_start: bool = False
+    """If set, run one validation pass before the training loop starts (at the
+    current iteration, normally step 0). Useful for establishing a baseline
+    validation loss for the initial / loaded checkpoint."""
 
 
 @dataclass(kw_only=True)

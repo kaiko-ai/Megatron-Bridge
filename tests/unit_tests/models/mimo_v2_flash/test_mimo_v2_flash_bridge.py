@@ -106,6 +106,15 @@ def _make_mock_pretrained(with_state=False):
     return pretrained
 
 
+class TestMiMoV2FlashAutoBridgeRegistration:
+    def test_live_hf_architecture_name_is_registered(self):
+        config = _make_mock_config()
+
+        AutoBridge._validate_config(config, "XiaomiMiMo/MiMo-V2-Flash")
+
+        assert "MiMoV2FlashForCausalLM" in AutoBridge.list_supported_models()
+
+
 class TestMiMoV2FlashBridgeProviderBridge:
     @pytest.fixture
     def bridge(self):

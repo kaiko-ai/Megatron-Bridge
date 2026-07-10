@@ -180,8 +180,128 @@ def get_batch(data_iterator: Iterable, cfg: ConfigContainer, use_mtp: bool = Fal
         is_first_pp_stage=is_first,
         is_last_pp_stage=is_last,
     )
+<<<<<<< HEAD
 
     visual_inputs = batch.get("visual_inputs")
+=======
+    enable_packing = getattr(cfg.dataset, "pack_sequences_in_batch", False)
+    # Precomputed varlen cu_seqlens from the dataloader (padding_free / block_causal packing).
+    # When present, skip runtime padding and let the metadata flow to the model.
+    has_cu_seqlens = batch.get("cu_seqlens") is not None
+    if enable_packing and has_cu_seqlens:
+        raise ValueError("Both pack_sequences_in_batch and precomputed cu_seqlens packing are active; use one.")
+
+    if not enable_packing and not has_cu_seqlens:
+        # PP needs fixed activation shapes across stages. EP/HybridEP also needs
+        # matching token dimensions across the expert group for routing metadata.
+        requires_fixed_seq_len = (
+            getattr(cfg.model, "pipeline_model_parallel_size", 1) > 1
+            or getattr(cfg.model, "expert_model_parallel_size", 1) > 1
+        )
+        if requires_fixed_seq_len:
+            seq_len = cfg.model.seq_length
+
+            tokens_or_input = batch.get("tokens") if batch.get("tokens") is not None else batch.get("input_ids")
+            tokens_or_input = pad_or_truncate_2d_to_len(tokens_or_input, seq_len, seq_len, pad_value=0)
+            if batch.get("tokens") is not None:
+                batch["tokens"] = tokens_or_input  # type: ignore[assignment]
+            else:
+                batch["input_ids"] = tokens_or_input  # type: ignore[assignment]
+            batch["labels"] = pad_or_truncate_2d_to_len(batch.get("labels"), seq_len, seq_len, pad_value=-100)  # type: ignore[assignment]
+            batch["loss_mask"] = pad_or_truncate_2d_to_len(batch.get("loss_mask"), seq_len, seq_len, pad_value=0)  # type: ignore[assignment]
+            batch["position_ids"] = pad_or_truncate_pos_to_len(batch.get("position_ids"), seq_len, seq_len)  # type: ignore[assignment]
+            if batch.get("attention_mask") is not None:
+                batch["attention_mask"] = pad_or_truncate_attn_to_len(batch.get("attention_mask"), seq_len, seq_len)  # type: ignore[assignment]
+        else:
+            # No PP: pad sequence length to nearest multiple of 128 for efficiency (capped at model seq_length)
+            seq_cap = cfg.model.seq_length
+
+            def _ceil_to_mult(n: int, mult: int) -> int:
+                return ((n + mult - 1) // mult) * mult
+
+            tokens_or_input = batch.get("tokens") if batch.get("tokens") is not None else batch.get("input_ids")
+            if tokens_or_input is not None:
+                cur_len = tokens_or_input.size(1)
+                target_len = min(seq_cap, _ceil_to_mult(cur_len, 128))
+
+                # tokens/input_ids
+                padded_tokens = pad_or_truncate_2d_to_len(tokens_or_input, target_len, seq_cap, pad_value=0)
+                if batch.get("tokens") is not None:
+                    batch["tokens"] = padded_tokens  # type: ignore[assignment]
+                else:
+                    batch["input_ids"] = padded_tokens  # type: ignore[assignment]
+
+                # labels and loss mask
+                batch["labels"] = pad_or_truncate_2d_to_len(batch.get("labels"), target_len, seq_cap, pad_value=-100)  # type: ignore[assignment]
+                batch["loss_mask"] = pad_or_truncate_2d_to_len(
+                    batch.get("loss_mask"), target_len, seq_cap, pad_value=0
+                )  # type: ignore[assignment]
+
+                # position_ids: extend with increasing positions
+                pos = batch.get("position_ids")
+                pos = pad_or_truncate_pos_to_len(pos, target_len, seq_cap)
+                if pos is not None:
+                    batch["position_ids"] = pos  # type: ignore[assignment]
+
+                # attention_mask if present
+                attn = batch.get("attention_mask")
+                if attn is not None:
+                    attn = pad_or_truncate_attn_to_len(attn, target_len, seq_cap)
+                    batch["attention_mask"] = attn  # type: ignore[assignment]
+
+    visual_inputs = batch.get("visual_inputs")
+    cp_size = pg_collection.cp.size() if pg_collection is not None and pg_collection.cp is not None else 1
+    tp_size = pg_collection.tp.size() if pg_collection is not None and pg_collection.tp is not None else 1
+    has_sp = getattr(cfg.model, "sequence_parallel", False)
+
+    if enable_packing:
+        # Pack sequences
+        tokens_or_input = batch.get("tokens") if batch.get("tokens") is not None else batch.get("input_ids")
+
+        # Compute pad_to_multiple_of as lcm of CP and SP constraints.
+        # CP zigzag requires divisibility by 2*cp_size; SP reduce_scatter requires
+        # the per-CP-rank length to be divisible by tp_size (i.e. total divisible by
+        # cp_size*tp_size). Reference: megatron/core/models/multimodal/context_parallel.py
+        cp_multiple = 2 * cp_size if cp_size > 1 else 1
+        sp_multiple = cp_size * tp_size if has_sp and tp_size > 1 else 1
+        pad_multiple = math.lcm(cp_multiple, sp_multiple)
+
+        (
+            packed_tokens,
+            packed_labels,
+            packed_loss_mask,
+            packed_attention_mask,
+            packed_position_ids,
+            cu_seqlens,
+            max_seqlen,
+        ) = pack_batch_sequences(
+            tokens=tokens_or_input,
+            labels=batch.get("labels"),
+            loss_mask=batch.get("loss_mask"),
+            attention_mask=batch.get("attention_mask"),
+            position_ids=batch.get("position_ids"),
+            pad_token_id=0,
+            pad_to_multiple_of=pad_multiple,
+            padding_mask=batch.get("_padding_mask"),
+        )
+
+        # Update batch dict with packed tensors
+        if batch.get("tokens") is not None:
+            batch["tokens"] = packed_tokens
+        else:
+            batch["input_ids"] = packed_tokens
+        batch["labels"] = packed_labels
+        batch["loss_mask"] = packed_loss_mask
+        batch["attention_mask"] = packed_attention_mask
+        batch["position_ids"] = packed_position_ids
+
+        # # Add packing metadata
+        logger.debug(f"Packed batch: cu_seqlens={cu_seqlens.tolist()}, max_seqlen={max_seqlen}")
+    else:
+        # Precomputed cu_seqlens flow through; None for cat / unpacked batches.
+        cu_seqlens = batch.get("cu_seqlens")
+        max_seqlen = batch.get("max_seqlen")
+>>>>>>> main
 
     return (
         (batch.get("tokens") if batch.get("tokens") is not None else batch.get("input_ids")),

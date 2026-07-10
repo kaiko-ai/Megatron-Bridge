@@ -393,8 +393,14 @@ class TestLoRAFinetune:
             dataset_kwargs = {}
             offline_packing_specs = None
 
+<<<<<<< HEAD
         config = GPTSFTDatasetConfig(
             dataset_root=dataset_root,
+=======
+        config = HFDatasetConfig(
+            dataset_name="rajpurkar/squad",
+            process_example_fn=process_squad_example,
+>>>>>>> main
             seq_length=seq_length,
             seed=seed,
             dataloader_type="cyclic" if packed_sequences else "single",

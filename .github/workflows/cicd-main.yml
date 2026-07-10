@@ -466,13 +466,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+<<<<<<< HEAD
         with:
           ref: ${{ needs.configure.outputs.merge_sha }}
+=======
+>>>>>>> main
 
       - name: Run venv import check
         shell: bash -e -u -o pipefail {0}
         env:
+<<<<<<< HEAD
           IMAGE: ${{ needs.pre-flight.outputs.registry }}/megatron-bridge:${{ needs.configure.outputs.merge_sha }}
+=======
+          IMAGE: ${{ needs.pre-flight.outputs.registry }}/megatron-bridge:${{ github.sha }}
+>>>>>>> main
         run: |
           docker run --rm \
             -v "${{ github.workspace }}/docker/common:/opt/import-check:ro" \

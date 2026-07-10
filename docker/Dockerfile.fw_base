@@ -142,6 +142,11 @@ RUN --mount=type=bind,from=vllm_wheel,source=/src/vllm/,target=/tmp/vllm/ \
 
 FROM ${FW_BASE_FINAL} AS nemo_fw_base_final
 
+<<<<<<< HEAD
+=======
+WORKDIR /opt
+
+>>>>>>> main
 ##############################################################################
 ##
 ## Remove nvidia-modelopt
@@ -151,4 +156,9 @@ FROM ${FW_BASE_FINAL} AS nemo_fw_base_final
 ##
 ##############################################################################
 
+<<<<<<< HEAD
 RUN cd /opt && pip uninstall -y nvidia-modelopt || true
+=======
+RUN pip uninstall -y nvidia-modelopt || true
+
+>>>>>>> main

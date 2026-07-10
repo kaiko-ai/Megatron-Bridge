@@ -7,12 +7,20 @@ Megatron Bridge uses different dataset config objects for pretraining, text fine
 | Workflow | Data format | Config or provider | Required path fields |
 |----------|-------------|--------------------|----------------------|
 | LLM pretraining | Megatron binary `.bin`/`.idx` prefixes | `GPTDatasetConfig` | `data_path`, `blend`, or `blend_per_split` |
+<<<<<<< HEAD
 | LLM SFT or PEFT from local files | JSONL split files | `GPTSFTDatasetConfig` | `dataset_root` |
 | LLM SFT or PEFT from Hugging Face datasets | Hugging Face rows converted to SFT JSONL, optionally packed | `GPTSFTDatasetConfig` | `hf_dataset.dataset_name` preset or custom `path_or_dataset`; optional `hf_output_root` |
 | Direct Hugging Face SFT for text, vision, or audio | Source rows processed at runtime | `DirectHFSFTDatasetConfig` | `source.dataset_name` preset or custom `path_or_dataset`; optional `hf_processor_path` |
 | VLM SFT or PEFT | Energon/WebDataset, Hugging Face VLM dataset, or preloaded JSON | `DirectHFSFTDatasetConfig`, Energon, or a specialized provider | HF source and processor fields, or provider-specific storage fields |
 
 Use `seq_length` in Bridge examples and CLI overrides. `GPTDatasetConfig` also stores this value as Megatron Core's inherited `sequence_length` field internally, while `GPTSFTDatasetConfig` exposes `seq_length` directly.
+=======
+| LLM SFT or PEFT from local files | JSONL split files | `FinetuningDatasetConfig` | `dataset_root` |
+| LLM SFT or PEFT from Hugging Face datasets | Hugging Face dataset processed to JSONL | `HFDatasetConfig` | `dataset_name`, `process_example_fn`, optional `dataset_root` |
+| VLM SFT or PEFT | Energon/WebDataset, Hugging Face VLM dataset, or preloaded JSON | VLM `DatasetProvider` | Provider-specific fields such as `path`, `train_data_path`, or `image_folder` |
+
+Use `seq_length` in Bridge examples and CLI overrides. `GPTDatasetConfig` also stores this value as Megatron Core's inherited `sequence_length` field internally, but `FinetuningDatasetConfig` uses `seq_length`.
+>>>>>>> main
 
 ## LLM Pretraining Data
 
@@ -42,8 +50,13 @@ dataset = GPTDatasetConfig(
 The CLI-friendly `data_path` field is converted to Megatron Core's `blend` field during config finalization. For weighted multi-dataset training, use either a flattened `data_path` list with weights and prefixes or set `blend`/`blend_per_split` directly.
 
 ```bash
+<<<<<<< HEAD
 uv run python -m torch.distributed.run --nproc_per_node=1 scripts/training/run_recipe.py \
     --recipe llama32_1b_pretrain_1gpu_h100_bf16_config \
+=======
+uv run python -m torch.distributed.run --nproc_per_node=8 scripts/training/run_recipe.py \
+    --recipe llama32_1b_pretrain_config \
+>>>>>>> main
     --dataset llm-pretrain \
     dataset.data_path=/data/dclm/preprocessed_text_document \
     dataset.seq_length=8192
@@ -62,12 +75,17 @@ Text SFT and PEFT use a directory containing split files named `training.jsonl`,
   test.jsonl
 ```
 
+<<<<<<< HEAD
 The default materialized backend accepts `input`/`output` prompt-completion rows. Its explicit preprocessing config tokenizes the two fields without calling a chat template:
+=======
+The default text SFT dataset expects each JSONL record to contain prompt and answer fields compatible with the configured `prompt_template`. The common input/output format is:
+>>>>>>> main
 
 ```json
 {"input": "Question: What is Megatron Bridge?", "output": "A PyTorch-native bridge for Megatron-Core workflows."}
 ```
 
+<<<<<<< HEAD
 Configure local JSONL data with `GPTSFTDatasetConfig.dataset_root`:
 
 ```python
@@ -82,14 +100,29 @@ dataset = GPTSFTDatasetConfig(
         separator=" ",
         loss_mode="completion",
     ),
+=======
+Configure local JSONL data with `FinetuningDatasetConfig.dataset_root`:
+
+```python
+from megatron.bridge.training.config import FinetuningDatasetConfig
+
+dataset = FinetuningDatasetConfig(
+    dataset_root="/data/sft_jsonl",
+    seq_length=4096,
+>>>>>>> main
 )
 ```
 
 Launch the generic recipe runner with the preloaded local JSONL dataset type:
 
 ```bash
+<<<<<<< HEAD
 uv run python -m torch.distributed.run --nproc_per_node=1 scripts/training/run_recipe.py \
     --recipe llama32_1b_sft_1gpu_h100_bf16_config \
+=======
+uv run python -m torch.distributed.run --nproc_per_node=8 scripts/training/run_recipe.py \
+    --recipe llama32_1b_sft_config \
+>>>>>>> main
     --dataset llm-finetune-preloaded \
     dataset.dataset_root=/data/sft_jsonl \
     dataset.seq_length=4096 \
@@ -98,6 +131,7 @@ uv run python -m torch.distributed.run --nproc_per_node=1 scripts/training/run_r
 
 For PEFT, use the PEFT recipe or set `cfg.peft`; the data layout stays the same. `checkpoint.pretrained_checkpoint` is required for the frozen base model, and `checkpoint.load` is used only when resuming adapter checkpoints.
 
+<<<<<<< HEAD
 For preparation schemas, offline packing, finite epochs, and a complete knob reference, see the [text-only SFT dataset tutorial](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/tutorials/data/text-only-sft/README.md).
 
 ## Hugging Face Datasets for SFT and PEFT
@@ -129,10 +163,32 @@ dataset = GPTSFTDatasetConfig(
 If `hf_output_root` is omitted, the generated JSONL is cached under the NeMo datasets cache for the source. Keep `hf_rewrite=False` when later runs should reuse those files. With builder-managed offline packing, `hf_rewrite=True` regenerates both normalized JSONL and packed artifacts; explicit packed output paths are rejected in this mode to avoid stale data.
 
 > **Deprecated compatibility APIs:** `FinetuningDatasetConfig` and `FinetuningDatasetBuilder` remain only for existing callers. New code must use `GPTSFTDatasetConfig` with `GPTSFTDatasetBuilder`; runtime objects such as tokenizers belong to the builder, not the serialized config.
+=======
+## Hugging Face Datasets for SFT and PEFT
+
+`HFDatasetConfig` downloads or reads a Hugging Face dataset, applies a processing function to each example, writes Bridge-compatible JSONL split files, and then builds the same fine-tuning dataset used by local JSONL.
+
+```python
+from megatron.bridge.data.builders.hf_dataset import HFDatasetConfig
+from megatron.bridge.data.hf_processors.squad import process_squad_example
+
+dataset = HFDatasetConfig(
+    dataset_name="rajpurkar/squad",
+    process_example_fn=process_squad_example,
+    dataset_root="/data/processed/squad",
+    seq_length=512,
+    val_proportion=0.1,
+    do_test=False,
+)
+```
+
+If `dataset_root` is omitted, the processed JSONL is cached under the NeMo datasets cache for the dataset name. Set `rewrite=False` when you want later runs to reuse already processed files.
+>>>>>>> main
 
 The generic launcher provides preset Hugging Face text datasets through `--dataset llm-finetune`:
 
 ```bash
+<<<<<<< HEAD
 uv run python -m torch.distributed.run --nproc_per_node=1 scripts/training/run_recipe.py \
     --recipe llama32_1b_peft_1gpu_h100_bf16_config \
     --dataset llm-finetune \
@@ -206,12 +262,29 @@ For hosted datasets, text and multimodal schemas, split sources, in-batch packin
 ## VLM Fine-Tuning Data
 
 VLM recipes use either the canonical HF SFT Config + Builder path, Energon, or a specialized compatibility provider. The runtime builder or provider owns the processor needed to turn image, video, audio, and text records into batches.
+=======
+uv run python -m torch.distributed.run --nproc_per_node=8 scripts/training/run_recipe.py \
+    --recipe llama32_1b_peft_config \
+    --dataset llm-finetune \
+    dataset.dataset_name=gsm8k \
+    checkpoint.pretrained_checkpoint=/checkpoints/base_model
+```
+
+## VLM Fine-Tuning Data
+
+VLM recipes usually use a dataset provider instead of `FinetuningDatasetConfig`. The provider owns both the storage format and the processor needed to turn image, video, audio, and text records into batches.
+>>>>>>> main
 
 For Energon/WebDataset data, create tar shards plus `.nv-meta` metadata and pass the dataset root to the recipe provider:
 
 ```bash
+<<<<<<< HEAD
 uv run python -m torch.distributed.run --nproc_per_node=1 scripts/training/run_recipe.py \
     --recipe qwen3_vl_8b_peft_1gpu_h100_bf16_energon_config \
+=======
+uv run python -m torch.distributed.run --nproc_per_node=8 scripts/training/run_recipe.py \
+    --recipe qwen3_vl_8b_peft_energon_config \
+>>>>>>> main
     --dataset vlm-energon \
     --step_func qwen3_vl_step \
     dataset.path=/data/vlm_energon \
@@ -225,8 +298,13 @@ For preloaded VLM JSON or JSONL, use records with `messages` or `conversations` 
 ```
 
 ```bash
+<<<<<<< HEAD
 uv run python -m torch.distributed.run --nproc_per_node=1 scripts/training/run_recipe.py \
     --recipe qwen3_vl_8b_peft_1gpu_h100_bf16_config \
+=======
+uv run python -m torch.distributed.run --nproc_per_node=8 scripts/training/run_recipe.py \
+    --recipe qwen3_vl_8b_peft_config \
+>>>>>>> main
     --dataset vlm-preloaded \
     --step_func qwen3_vl_step \
     dataset.train_data_path=/data/vlm/train.jsonl \
