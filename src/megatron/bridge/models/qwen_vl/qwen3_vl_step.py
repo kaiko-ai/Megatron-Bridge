@@ -277,6 +277,10 @@ def forward_step(
         is_hybrid_cp=False,
         cp_group=this_pg_collection.cp,
     )
+    # CP-sliced loss_mask matching the model's CP-windowed output. The model re-slices the
+    # full loss_mask internally (slice_batch_for_context_parallel), so its output length is the
+    # CP window; the loss fn must use this sliced mask, not the full one restored below.
+    cp_sliced_loss_mask = forward_args["loss_mask"]
     forward_args["packed_seq_params"] = None
     forward_args["input_ids"] = original_tokens
     forward_args["labels"] = original_labels
@@ -298,7 +302,12 @@ def forward_step(
         forward_args["packed_seq_params"] = packed_seq_params
 
     # use cp split loss mask for calculate loss
-    loss_mask = forward_args["loss_mask"]
+    if pack_sequences_in_batch:
+        loss_mask = forward_args["loss_mask"]
+    else:
+        # Non-packing: model CP-slices internally, so loss fn needs the CP-sliced mask
+        # captured before original_loss_mask was restored into forward_args.
+        loss_mask = cp_sliced_loss_mask
     # follow the design of verl, we put the multi-modal inputs in the forward args
     if "pixel_values" in multi_modal_inputs:
         forward_args["pixel_values"] = multi_modal_inputs["pixel_values"]
