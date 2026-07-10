@@ -308,6 +308,15 @@ def forward_step(
         # Non-packing: model CP-slices internally, so loss fn needs the CP-sliced mask
         # captured before original_loss_mask was restored into forward_args.
         loss_mask = cp_sliced_loss_mask
+
+    logger.warning(
+        "[qwen3_vl cp-debug] cp_size=%s pack=%s original_loss_mask=%s cp_sliced_loss_mask=%s chosen_loss_mask=%s",
+        this_pg_collection.cp.size(),
+        pack_sequences_in_batch,
+        None if original_loss_mask is None else tuple(original_loss_mask.shape),
+        None if cp_sliced_loss_mask is None else tuple(cp_sliced_loss_mask.shape),
+        None if loss_mask is None else tuple(loss_mask.shape),
+    )
     # follow the design of verl, we put the multi-modal inputs in the forward args
     if "pixel_values" in multi_modal_inputs:
         forward_args["pixel_values"] = multi_modal_inputs["pixel_values"]
@@ -332,6 +341,12 @@ def forward_step(
             return schedule_plan, loss_function
         else:
             output_tensor = model(**forward_args)
+
+    logger.warning(
+        "[qwen3_vl cp-debug] model output_tensor shape=%s loss_mask-for-lossfn=%s",
+        tuple(output_tensor.shape) if torch.is_tensor(output_tensor) else type(output_tensor).__name__,
+        None if loss_mask is None else tuple(loss_mask.shape),
+    )
 
     loss_function = _create_loss_function(loss_mask, check_for_nan_in_loss, check_for_spiky_loss)
 
