@@ -71,7 +71,7 @@ class TestSliceBatchForContextParallelCpSize1:
             pg_collection=pg_collection,
         )
 
-        out_embeds, out_labels, out_loss_mask, out_pos_ids, out_attn_mask = result
+        out_embeds, out_labels, out_loss_mask, out_pos_ids, out_attn_mask, _ = result
 
         # All tensors should be unchanged
         assert torch.equal(out_embeds, inputs_embeds)
@@ -101,7 +101,7 @@ class TestSliceBatchForContextParallelCpSize1:
             pg_collection=pg_collection,
         )
 
-        out_embeds, out_labels, out_loss_mask, out_pos_ids, out_attn_mask = result
+        out_embeds, out_labels, out_loss_mask, out_pos_ids, out_attn_mask, _ = result
 
         assert torch.equal(out_embeds, inputs_embeds)
         assert torch.equal(out_labels, labels)
@@ -151,13 +151,50 @@ class TestSliceBatchForContextParallelBSHD:
                 pg_collection=pg_collection,
             )
 
-        out_embeds, out_labels, out_loss_mask, out_pos_ids, out_attn_mask = result
+        out_embeds, out_labels, out_loss_mask, out_pos_ids, out_attn_mask, _ = result
 
         # Check that output tensors are sliced (half the sequence length)
         assert out_embeds.shape[0] == seq_len // 2  # T dimension
         assert out_embeds.shape[1] == batch_size  # B dimension
         assert out_labels.shape[1] == seq_len // 2
         assert out_loss_mask.shape[1] == seq_len // 2
+
+    def test_bshd_slices_input_ids_in_lockstep_with_labels(self):
+        """input_ids must be CP-sliced identically to labels (MTP re-embeds it)."""
+        batch_size, seq_len, hidden = 2, 16, 64
+        inputs_embeds = torch.randn(seq_len, batch_size, hidden)
+        labels = torch.arange(batch_size * seq_len).reshape(batch_size, seq_len)
+        input_ids = labels.clone()
+
+        pg_collection = MockPGCollection(cp_size=2, cp_rank=0)
+
+        def mock_get_batch(batch_dict, is_hybrid_cp=False, cp_group=None, hybrid_cp_group_func=None):
+            result = {}
+            for k, v in batch_dict.items():
+                if v is not None and isinstance(v, torch.Tensor):
+                    result[k] = v[:, : seq_len // 2, :] if k == "decoder_input" else v[:, : seq_len // 2]
+                else:
+                    result[k] = v
+            return result
+
+        with patch(
+            "megatron.bridge.utils.common_utils.get_batch_on_this_cp_rank",
+            side_effect=mock_get_batch,
+        ):
+            *_, out_labels, _, _, out_input_ids = slice_batch_for_context_parallel(
+                inputs_embeds=inputs_embeds,
+                labels=labels,
+                loss_mask=torch.ones(batch_size, seq_len),
+                position_ids=None,
+                attention_mask=None,
+                packed_seq_params=None,
+                pg_collection=pg_collection,
+                input_ids=input_ids,
+            )
+
+        # Since input_ids == labels going in, the CP-sliced outputs must match exactly.
+        assert out_input_ids.shape[1] == seq_len // 2
+        assert torch.equal(out_input_ids, out_labels)
 
     def test_bshd_format_handles_none_tensors(self):
         """Test that BSHD format handles None tensors gracefully."""
@@ -192,7 +229,7 @@ class TestSliceBatchForContextParallelBSHD:
                 pg_collection=pg_collection,
             )
 
-        out_embeds, out_labels, out_loss_mask, out_pos_ids, out_attn_mask = result
+        out_embeds, out_labels, out_loss_mask, out_pos_ids, out_attn_mask, _ = result
 
         assert out_embeds is not None
         assert out_labels is None
@@ -244,7 +281,7 @@ class TestSliceBatchForContextParallelTHD:
                 pg_collection=pg_collection,
             )
 
-        out_embeds, out_labels, out_loss_mask, out_pos_ids, out_attn_mask = result
+        out_embeds, out_labels, out_loss_mask, out_pos_ids, out_attn_mask, _ = result
 
         # Verify tex.thd_get_partitioned_indices was called
         mock_tex.thd_get_partitioned_indices.assert_called_once()
@@ -295,7 +332,7 @@ class TestSliceBatchForContextParallelTHD:
                 pg_collection=pg_collection,
             )
 
-        out_embeds, out_labels, out_loss_mask, out_pos_ids, out_attn_mask = result
+        out_embeds, out_labels, out_loss_mask, out_pos_ids, out_attn_mask, _ = result
 
         # Verify padded cu_seqlens was used
         call_args = mock_tex.thd_get_partitioned_indices.call_args

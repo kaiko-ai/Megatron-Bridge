@@ -46,7 +46,6 @@ from megatron.bridge.models.qwen_vl.modelling_qwen3_vl.utils import (
     preprocess_packed_seqs,
     qwen3vl_cp_split,
     reorganize_inputs,
-    split_data_cp_rank,
     split_deepstack_embs,
 )
 from megatron.bridge.models.qwen_vl.modelling_qwen3_vl.vision_model import Qwen3VLVisionModel
@@ -503,7 +502,14 @@ class Qwen3VLModel(MegatronModule):
                 combined_embeddings = combined_embeddings.transpose(0, 1).contiguous()
 
             if cp_size > 1 and packed_seq_params is None:
-                combined_embeddings, labels, loss_mask, position_ids, attention_mask = slice_batch_for_context_parallel(
+                (
+                    combined_embeddings,
+                    labels,
+                    loss_mask,
+                    position_ids,
+                    attention_mask,
+                    lm_input_ids,
+                ) = slice_batch_for_context_parallel(
                     inputs_embeds=combined_embeddings,
                     labels=labels,
                     loss_mask=loss_mask,
@@ -511,6 +517,10 @@ class Qwen3VLModel(MegatronModule):
                     attention_mask=attention_mask,
                     packed_seq_params=None,
                     pg_collection=self.pg_collection,
+                    # CP-slice input_ids too so the MTP path re-embeds a CP-window-length
+                    # sequence matching the CP-sliced hidden states. Full input_ids is still
+                    # used above/below for vision reorg and rope index.
+                    input_ids=input_ids,
                 )
             if packed_seq_params is not None:
                 if attention_mask is None:

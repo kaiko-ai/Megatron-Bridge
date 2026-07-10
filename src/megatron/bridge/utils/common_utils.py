@@ -231,6 +231,7 @@ def slice_batch_for_context_parallel(
     attention_mask: torch.Tensor,
     packed_seq_params,
     pg_collection,
+    input_ids: torch.Tensor = None,
 ):
     """Slice batch tensors for Context Parallelism (CP) in VLM models.
 
@@ -248,13 +249,17 @@ def slice_batch_for_context_parallel(
         packed_seq_params: PackedSeqParams for THD format, or None for BSHD.
         pg_collection: ProcessGroupCollection containing CP group info.
 
+        input_ids: Optional token ID tensor to slice in lockstep with labels. Needed so the
+            MTP embedding path re-embeds a CP-window-length sequence matching the CP-sliced
+            hidden states.
+
     Returns:
-        Tuple of (inputs_embeds, labels, loss_mask, position_ids, attention_mask)
+        Tuple of (inputs_embeds, labels, loss_mask, position_ids, attention_mask, input_ids)
         with all tensors sliced for this CP rank. inputs_embeds remains in (T, B, D) format.
     """
     cp_size = pg_collection.cp.size()
     if cp_size <= 1:
-        return inputs_embeds, labels, loss_mask, position_ids, attention_mask
+        return inputs_embeds, labels, loss_mask, position_ids, attention_mask, input_ids
 
     cp_rank = pg_collection.cp.rank()
 
@@ -287,6 +292,8 @@ def slice_batch_for_context_parallel(
             loss_mask = loss_mask.index_select(1, index)
         if position_ids is not None:
             position_ids = position_ids.index_select(1, index)
+        if input_ids is not None:
+            input_ids = input_ids.index_select(1, index)
         # Note: attention_mask and packed_seq_params stay unchanged for ring attention
     else:
         # For BSHD format, use standard zigzag slicing
@@ -311,6 +318,7 @@ def slice_batch_for_context_parallel(
             "loss_mask": _ensure_min_dim(loss_mask, 2),
             "position_ids": _ensure_min_dim(position_ids, 2),
             "attention_mask": _ensure_min_dim(attention_mask, 3),
+            "input_ids": _ensure_min_dim(input_ids, 2),
         }
 
         cp_batch = get_batch_on_this_cp_rank(
@@ -324,9 +332,10 @@ def slice_batch_for_context_parallel(
         loss_mask = cp_batch.get("loss_mask")
         position_ids = cp_batch.get("position_ids")
         attention_mask = cp_batch.get("attention_mask")
+        input_ids = cp_batch.get("input_ids")
 
     # Transpose back to (T, B, D)
     if inputs_embeds is not None:
         inputs_embeds = inputs_embeds.transpose(0, 1).contiguous()
 
-    return inputs_embeds, labels, loss_mask, position_ids, attention_mask
+    return inputs_embeds, labels, loss_mask, position_ids, attention_mask, input_ids

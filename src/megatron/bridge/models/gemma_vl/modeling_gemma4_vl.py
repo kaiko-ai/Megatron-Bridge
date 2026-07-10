@@ -181,7 +181,7 @@ class Gemma4VLModel(MegatronModule):
         attention_mask = self._compute_attention_mask(input_ids)
 
         # CP slicing
-        inputs_embeds, labels, loss_mask, position_ids, attention_mask = slice_batch_for_context_parallel(
+        inputs_embeds, labels, loss_mask, position_ids, attention_mask, _ = slice_batch_for_context_parallel(
             inputs_embeds=inputs_embeds,
             labels=labels,
             loss_mask=loss_mask,

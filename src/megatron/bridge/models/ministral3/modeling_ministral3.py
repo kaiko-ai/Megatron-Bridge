@@ -253,7 +253,7 @@ class Ministral3Model(MegatronModule):
 
         # CP slicing: slice embeddings, labels, loss_mask, position_ids, and attention_mask
         # This must happen AFTER vision-text merge so image token positions are correct
-        inputs_embeds, labels, loss_mask, position_ids, attention_mask = slice_batch_for_context_parallel(
+        inputs_embeds, labels, loss_mask, position_ids, attention_mask, _ = slice_batch_for_context_parallel(
             inputs_embeds=inputs_embeds,
             labels=labels,
             loss_mask=loss_mask,
