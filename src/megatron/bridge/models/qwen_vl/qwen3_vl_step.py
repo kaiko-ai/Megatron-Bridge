@@ -269,11 +269,6 @@ def forward_step(
         "position_ids": position_ids,
     }
 
-    print(
-        f"[qwen3_vl cp-debug] ENTER forward_step post-pack loss_mask="
-        f"{None if loss_mask is None else tuple(loss_mask.shape)} pack={pack_sequences_in_batch}",
-        flush=True,
-    )
     original_tokens = tokens.clone()
     original_labels = labels.clone() if labels is not None else None
     original_loss_mask = loss_mask.clone() if loss_mask is not None else None
@@ -282,10 +277,6 @@ def forward_step(
         is_hybrid_cp=False,
         cp_group=this_pg_collection.cp,
     )
-    # CP-sliced loss_mask matching the model's CP-windowed output. The model re-slices the
-    # full loss_mask internally (slice_batch_for_context_parallel), so its output length is the
-    # CP window; the loss fn must use this sliced mask, not the full one restored below.
-    cp_sliced_loss_mask = forward_args["loss_mask"]
     forward_args["packed_seq_params"] = None
     forward_args["input_ids"] = original_tokens
     forward_args["labels"] = original_labels
@@ -306,21 +297,10 @@ def forward_step(
         # use split attention mask for calculate loss
         forward_args["packed_seq_params"] = packed_seq_params
 
-    # use cp split loss mask for calculate loss
-    if pack_sequences_in_batch:
-        loss_mask = forward_args["loss_mask"]
-    else:
-        # Non-packing: model CP-slices internally, so loss fn needs the CP-sliced mask
-        # captured before original_loss_mask was restored into forward_args.
-        loss_mask = cp_sliced_loss_mask
-
-    print(
-        f"[qwen3_vl cp-debug] cp_size={this_pg_collection.cp.size()} pack={pack_sequences_in_batch} "
-        f"original_loss_mask={None if original_loss_mask is None else tuple(original_loss_mask.shape)} "
-        f"cp_sliced_loss_mask={None if cp_sliced_loss_mask is None else tuple(cp_sliced_loss_mask.shape)} "
-        f"chosen_loss_mask={None if loss_mask is None else tuple(loss_mask.shape)}",
-        flush=True,
-    )
+    # The model CP-slices loss_mask internally and returns it as (output, loss_mask); the loss
+    # function unpacks that tuple and uses the model's sliced mask. This fallback is only used if
+    # the model returns a bare tensor (e.g. non-CP paths that keep loss_mask unsliced).
+    loss_mask = forward_args["loss_mask"]
     # follow the design of verl, we put the multi-modal inputs in the forward args
     if "pixel_values" in multi_modal_inputs:
         forward_args["pixel_values"] = multi_modal_inputs["pixel_values"]
@@ -345,13 +325,6 @@ def forward_step(
             return schedule_plan, loss_function
         else:
             output_tensor = model(**forward_args)
-
-    print(
-        f"[qwen3_vl cp-debug] model output_tensor shape="
-        f"{tuple(output_tensor.shape) if torch.is_tensor(output_tensor) else type(output_tensor).__name__} "
-        f"loss_mask-for-lossfn={None if loss_mask is None else tuple(loss_mask.shape)}",
-        flush=True,
-    )
 
     loss_function = _create_loss_function(loss_mask, check_for_nan_in_loss, check_for_spiky_loss)
 

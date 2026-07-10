@@ -663,4 +663,9 @@ class Qwen3VLModel(MegatronModule):
         if self.use_dist_train:
             if not is_pp_last_stage(self.pg_collection.pp):
                 return {"language_module": output}
+        # Return the CP-sliced loss_mask alongside the output so the loss function uses a mask
+        # matching the model's CP-windowed losses. Matches the (outputs, loss_mask) contract of
+        # gemma_vl / ministral3 and the tuple handling in vlm_step / losses.masked_next_token_loss.
+        if loss_mask is not None:
+            return (output, loss_mask)
         return output
