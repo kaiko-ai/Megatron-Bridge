@@ -80,7 +80,7 @@ Example YAML (`conf/llama32_1b_pretrain.yaml`):
 # Each section maps to a ConfigContainer field
 dataset:                           # GPTDatasetConfig
   data_path: /path/to/training/data
-  seq_length: 4096
+  sequence_length: 4096
 
 train:                             # TrainingConfig
   train_iters: 100
