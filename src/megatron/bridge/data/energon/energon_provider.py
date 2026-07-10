@@ -73,10 +73,18 @@ class EnergonProvider(DatasetProvider):
     pad_to_max_length: bool = False
     pad_to_multiple_of: int = 128
     in_batch_packing_pad_to_multiple_of: int = 1
+    # Enable batch-level online sequence packing (Energon task-encoder side).
+    pack_sequences_in_batch: bool = False
     # Size of Energon's packing buffer. Required to enable Energon's sample-packing path: when
     # None, Energon never calls the task encoder's select_samples_to_pack / pack_selected_samples
     # hooks, so any packing_method set on the encoder is a silent no-op.
     packing_buffer_size: Optional[int] = None
+    # Evaluate each metadataset val sub-blend separately. Pairs with ValidationConfig.multiple_validation_sets.
+    multiple_validation_sets: bool = False
+    # When False, the dataset's attention_mask is forwarded to the model (needed for packing
+    # modes that supply a block-causal / padding mask); when True it is dropped and the attn
+    # backend autogenerates one. Read by vlm_step.get_batch.
+    skip_getting_attention_mask_from_dataset: bool = True
 
     def _sync_task_encoder_sequence_batching(self) -> None:
         if self.task_encoder is None:
@@ -90,11 +98,15 @@ class EnergonProvider(DatasetProvider):
         )
         self.task_encoder.in_batch_packing_pad_to_multiple_of = self.in_batch_packing_pad_to_multiple_of
 
-    def build_datasets(self, context: DatasetBuildContext):
-        assert self.path, "EnergonProvider.path must be set. Use CLI override: dataset.path=<path>"
-        self._sync_task_encoder_sequence_batching()
-        dataset = EnergonMultiModalDataModule(
-            path=self.path,
+    def _make_datamodule(self, path: str, context: DatasetBuildContext) -> EnergonMultiModalDataModule:
+        if (
+            self.pack_sequences_in_batch
+            and self.task_encoder is not None
+            and hasattr(self.task_encoder, "pack_sequences")
+        ):
+            self.task_encoder.pack_sequences = True
+        return EnergonMultiModalDataModule(
+            path=path,
             tokenizer=context.tokenizer if context.tokenizer is not None else self.tokenizer,
             image_processor=self.image_processor,
             seq_length=self.seq_length,
@@ -105,12 +117,39 @@ class EnergonProvider(DatasetProvider):
             packing_buffer_size=self.packing_buffer_size,
             pg_collection=context.pg_collection,
         )
+
+    def build_datasets(self, context: DatasetBuildContext):
+        assert self.path, "EnergonProvider.path must be set. Use CLI override: dataset.path=<path>"
+        # Energon sample packing (packing_buffer_size) and megatron-bridge batch-level online packing
+        # should not be called simultaneously.
+        if self.pack_sequences_in_batch and (self.packing_buffer_size or 0) > 0:
+            raise ValueError(
+                "pack_sequences_in_batch and packing_buffer_size are mutually exclusive: the former "
+                "enables megatron-bridge in-batch packing and the latter enables Energon sample "
+                "packing, so setting both packs the data twice. Disable one."
+            )
+        self._sync_task_encoder_sequence_batching()
+        dataset = self._make_datamodule(self.path, context)
+
+        valid = iter(dataset.val_dataloader())
+        if self.multiple_validation_sets:
+            # Blended loader plus one val-only loader per sub-blend (sub-blends have no train split).
+            valid = (
+                valid,
+                [
+                    (name, iter(self._make_datamodule(blend_path, context).val_dataloader()))
+                    for name, blend_path in _parse_val_blend_entries(self.path)
+                ],
+            )
+
         # EnergonMultiModalDataModule.test_dataloader() returns None (no distinct test split);
         # honor that instead of aliasing the validation loader as a fake test set, which would
         # otherwise report validation metrics as test metrics whenever eval_iters > 0.
         test_dataloader = dataset.test_dataloader()
+        # Train returned un-wrapped (not iter()) so the downstream RerunDataIterator retains
+        # save_state / restore_state for dataloader checkpoint save and resume.
         return (
-            iter(dataset.train_dataloader()),
-            iter(dataset.val_dataloader()),
+            dataset.train_dataloader(),
+            valid,
             iter(test_dataloader) if test_dataloader is not None else None,
         )
