@@ -457,24 +457,17 @@ class TestDeepSeekV4HardwareDefaults:
             patch.object(MegatronModelBridge, "provider_bridge", return_value=provider),
             patch.object(torch.cuda, "is_available", return_value=True),
             patch.object(torch.cuda, "get_device_capability", return_value=capability),
-<<<<<<< HEAD
             patch(
                 "megatron.bridge.models.deepseek.deepseek_v4_bridge.deepseek_v4_supports_fused_dsa_kernels",
                 return_value=True,
             ),
-=======
->>>>>>> main
         ):
             out = bridge.provider_bridge(hf_pretrained)
 
         assert out.apply_dsa_kernel_fusion is expected
         assert out.use_fused_mhc is expected
 
-<<<<<<< HEAD
     def test_provider_bridge_disables_blackwell_only_fusions_without_cuda(self):
-=======
-    def test_provider_bridge_preserves_fused_defaults_without_cuda(self):
->>>>>>> main
         hf_pretrained = MagicMock()
         hf_pretrained.config = _deepseek_v4_hf_config()
         provider = MagicMock()
@@ -486,7 +479,6 @@ class TestDeepSeekV4HardwareDefaults:
         ):
             out = bridge.provider_bridge(hf_pretrained)
 
-<<<<<<< HEAD
         assert out.apply_dsa_kernel_fusion is False
         assert out.use_fused_mhc is False
 
@@ -565,7 +557,3 @@ class TestDeepSeekV4ExportWeightDtype:
         out = bridge.maybe_modify_converted_hf_weight(task, {"a.weight": torch.ones(1)}, {})
 
         assert called.get("hit") and "quantized" in out
-=======
-        assert out.apply_dsa_kernel_fusion is True
-        assert out.use_fused_mhc is True
->>>>>>> main

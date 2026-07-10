@@ -141,18 +141,13 @@ Training quickstart using pre-configured recipes:
 
 ```python
 from megatron.bridge import AutoBridge
-<<<<<<< HEAD
 from megatron.bridge.recipes.llama.h100 import llama32_1b_pretrain_1gpu_h100_bf16_config
-=======
-from megatron.bridge.recipes.llama import llama32_1b_pretrain_config
->>>>>>> main
 from megatron.bridge.training.gpt_step import forward_step
 from megatron.bridge.training.pretrain import pretrain
 
 if __name__ == "__main__":
     # The recipe uses the Llama 3.2 1B architecture from Hugging Face.
     # This is random-init pretraining and does not require a converted Megatron checkpoint.
-<<<<<<< HEAD
     cfg = llama32_1b_pretrain_1gpu_h100_bf16_config()
 
     # The recipe already sets cfg.model internally using this pattern.
@@ -165,9 +160,6 @@ if __name__ == "__main__":
     # Optional: initialize weights from a converted Megatron checkpoint for SFT/PEFT
     # or other pretrained-weight workflows.
     # cfg.checkpoint.pretrained_checkpoint = "/path/to/megatron/checkpoint"
-=======
-    cfg = llama32_1b_pretrain_config()
->>>>>>> main
 
     # The recipe already sets cfg.model internally using this pattern.
     # Override cfg.model to choose a different Hugging Face model ID as the architecture source.
@@ -202,10 +194,7 @@ only reads the architecture configuration.
 
 For runnable recipe, data preparation, and training examples, see the repository
 [`tutorials/`](https://github.com/NVIDIA-NeMo/Megatron-Bridge/tree/main/tutorials) directory.
-<<<<<<< HEAD
 The [data tutorial index](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/tutorials/data/README.md) compares pretraining, text-only SFT, direct Hugging Face SFT, and Energon workflows.
-=======
->>>>>>> main
 
 More examples:
 

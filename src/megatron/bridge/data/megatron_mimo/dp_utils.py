@@ -25,7 +25,6 @@ def _batch_dim_for_tensor(key: str, value: torch.Tensor) -> int:
     return 0
 
 
-<<<<<<< HEAD
 def _is_patch_packed_visual_dict(value: Any) -> bool:
     """Detect a patch-packed visual encoder input layout.
 
@@ -110,8 +109,6 @@ def _slice_patch_packed_visual_dict(value: Dict[str, Any], dp_rank: int, dp_size
     return out
 
 
-=======
->>>>>>> main
 def _find_rank_module(
     grids: Dict[str, "HyperCommGrid"],
 ) -> Tuple["HyperCommGrid | None", "str | None"]:

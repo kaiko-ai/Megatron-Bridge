@@ -31,7 +31,6 @@ from megatron.bridge.utils.common_utils import hook_hf_module_setattr_for_tp_gra
 logger = logging.getLogger(__name__)
 
 
-<<<<<<< HEAD
 def _split_on_cp_rank(val: Optional[Tensor], cp_size: int, cp_rank: int, seq_dim: int) -> Optional[Tensor]:
     """Slice a tensor along ``seq_dim`` into this context-parallel rank's zigzag chunks.
 
@@ -74,8 +73,6 @@ def _split_attention_mask_on_cp_rank(
     raise ValueError(f"attention_mask must be 2D or 4D for CP slicing, got shape {tuple(attention_mask.shape)}.")
 
 
-=======
->>>>>>> main
 def _configure_kimi_vision_attention(vision_tower_config, vision_tower_cls) -> None:
     """Use flash attention for Kimi vision when available.
 
@@ -477,15 +474,12 @@ class KimiK25VLModel(MegatronModule):
             if self.config.sequence_parallel:
                 tp_group = self.config._pg_collection.tp if self.config._pg_collection is not None else None
                 inputs_embeds = scatter_to_sequence_parallel_region(inputs_embeds, group=tp_group)
-<<<<<<< HEAD
 
         if cp_size > 1:
             labels = _split_on_cp_rank(labels, cp_size, cp_rank, seq_dim=1)
             loss_mask = _split_on_cp_rank(loss_mask, cp_size, cp_rank, seq_dim=1)
             position_ids = _split_on_cp_rank(position_ids, cp_size, cp_rank, seq_dim=1)
             attention_mask = _split_attention_mask_on_cp_rank(attention_mask, cp_size, cp_rank)
-=======
->>>>>>> main
 
         outputs = self.language_model.forward(
             input_ids=None,

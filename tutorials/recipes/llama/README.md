@@ -91,11 +91,7 @@ checkpoint:                        # CheckpointConfig
   save_interval: 50
 
 model:                             # Model Provider
-<<<<<<< HEAD
   seq_length: 4096                 # Must match dataset.sequence_length
-=======
-  seq_length: 4096                 # Must match dataset.seq_length
->>>>>>> main
   tensor_model_parallel_size: 1
   
 optimizer:                         # OptimizerConfig
@@ -132,13 +128,8 @@ Example YAML (`conf/llama32_1b_finetune.yaml`):
 
 ```yaml
 # Each section maps to a ConfigContainer field
-<<<<<<< HEAD
 dataset:                           # GPTSFTDatasetConfig
   dataset_root: /path/to/gpt_sft_dataset_dir
-=======
-dataset:                           # FinetuningDatasetConfig
-  dataset_root: /path/to/finetuning_dataset_dir
->>>>>>> main
   seq_length: 4096
 
 train:                             # TrainingConfig

@@ -64,10 +64,7 @@ SUPPORTED_HF_ARCHITECTURES: tuple[str, ...] = (
     "NemotronH_Nano_Omni_Reasoning_V3",
     "Qwen2_5OmniModel",
     "NemotronLabsDiffusionModel",
-<<<<<<< HEAD
     "LLaDAModelLM",  # trust_remote_code class for GSAI-ML LLaDA1.5 (masked-diffusion LLM)
-=======
->>>>>>> main
 )
 
 # Mapping from non-standard HF architecture names to their actual transformers class names.

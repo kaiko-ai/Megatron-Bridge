@@ -74,13 +74,8 @@ def mock_hf_config_dense():
     cfg = Mock(spec=[])
     cfg.num_hidden_layers = 62
     cfg.hidden_size = 2816
-<<<<<<< HEAD
     cfg.intermediate_size = 2112
     cfg.moe_intermediate_size = 1408
-=======
-    cfg.intermediate_size = 2112  # shared expert FFN
-    cfg.moe_intermediate_size = 1408  # distinct from provider default to catch config leaks
->>>>>>> main
     cfg.num_attention_heads = 8
     cfg.num_key_value_heads = 4
     cfg.head_dim = 256
@@ -99,11 +94,8 @@ def mock_hf_config_dense():
     cfg.hidden_act = "gelu_pytorch_tanh"
     cfg.torch_dtype = "bfloat16"
     cfg.enable_moe_block = False
-<<<<<<< HEAD
     cfg.use_double_wide_mlp = True
     cfg.num_kv_shared_layers = 20
-=======
->>>>>>> main
     cfg.num_experts = 256
     cfg.top_k_experts = 16
     cfg.layer_types = ["sliding_attention"] * 5 + ["full_attention"] + ["sliding_attention"] * 5 + ["full_attention"]
@@ -180,25 +172,8 @@ class TestGemma4BridgeProviderBridgeMoE:
         assert p.moe_shared_expert_overlap is False
         assert p.moe_shared_expert_gate is False
 
-<<<<<<< HEAD
     def test_window_size(self, bridge, mock_pretrained_moe):
         assert bridge.provider_bridge(mock_pretrained_moe).window_size == 1024
-=======
-    def test_dense_config_keeps_default_moe_fields(self, bridge, mock_dense_pretrained):
-        provider = bridge.provider_bridge(mock_dense_pretrained)
-        assert provider.num_layers == 62
-        assert provider.hidden_size == 2816
-        assert provider.num_attention_heads == 8
-        assert provider.num_query_groups == 4
-        assert provider.kv_channels == 256
-        assert provider.vocab_size == 262144
-        assert provider.seq_length == 131072
-        assert provider.init_method_std == 0.02
-        assert provider.layernorm_epsilon == 1e-6
-        assert provider.num_moe_experts == 128
-        assert provider.moe_router_topk == 8
-        assert provider.moe_ffn_hidden_size == 704
->>>>>>> main
 
     def test_rotary_base_tuple(self, bridge, mock_pretrained_moe):
         rb = bridge.provider_bridge(mock_pretrained_moe).rotary_base

@@ -654,7 +654,6 @@ def merge_golden_values(prior: Optional[Dict[str, Any]], segment: Dict[str, Any]
     return {**prior, **segment}
 
 
-<<<<<<< HEAD
 def _unwrap_golden_values(values: Dict[str, Any]) -> Dict[str, Any]:
     """Return the step mapping from a flat or snapshot-wrapped golden file."""
     for snapshot_key in ("baseline", "current"):
@@ -667,8 +666,6 @@ def _unwrap_golden_values(values: Dict[str, Any]) -> Dict[str, Any]:
     return values
 
 
-=======
->>>>>>> main
 def calc_convergence_and_performance(
     model_family_name: str,
     model_recipe_name: str,

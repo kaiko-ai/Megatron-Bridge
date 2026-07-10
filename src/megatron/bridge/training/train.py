@@ -686,7 +686,6 @@ def train(
             )
             and global_state.train_state.step % val_config.eval_interval == 0
         ):
-<<<<<<< HEAD
             if energy_monitor is not None:
                 energy_monitor.pause()
             timers("interval-time").stop()
@@ -722,9 +721,6 @@ def train(
             timers("interval-time", log_level=0).start(barrier=True)
             if energy_monitor is not None:
                 energy_monitor.resume()
-=======
-            _run_validation(f"iteration {global_state.train_state.step}", toggle_pre_hook=True)
->>>>>>> main
 
         # Miscellaneous post-training-step functions (e.g., FT heartbeats, GC).
         # Some of these only happen at specific iterations.

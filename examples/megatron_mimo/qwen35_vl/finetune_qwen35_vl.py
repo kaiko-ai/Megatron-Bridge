@@ -1,16 +1,9 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026, NVIDIA CORPORATION. All rights reserved.
-<<<<<<< HEAD
 """Qwen3.5-VL MegatronMIMO runner on direct Hugging Face VLM SFT data.
 
 This is the MegatronMIMO counterpart to the standard Qwen3.5-VL SFT recipe.
 It runs on the same HF CORD-v2-style VLM SFT data, but routes the
-=======
-"""Qwen3.5-VL MegatronMIMO SFT runner on HF VLM conversation data.
-
-This is the MegatronMIMO counterpart to the standard Qwen3.5-VL SFT recipe.
-It runs on the same HF CORD-v2-style VLM conversation data, but routes the
->>>>>>> main
 batch through the MegatronMIMO heterogeneous-parallelism training path:
 language and image encoder modules run on disjoint rank groups, each with its
 own TP/PP/DP configuration.
@@ -36,10 +29,7 @@ from __future__ import annotations
 
 import argparse
 import logging
-<<<<<<< HEAD
 import math
-=======
->>>>>>> main
 import os
 import sys
 from collections.abc import Callable, Iterator
@@ -54,7 +44,6 @@ from megatron.core.models.mimo.config.role import MIMO_LANGUAGE_MODULE_KEY
 from transformers import AutoConfig
 
 from megatron.bridge import AutoBridge
-<<<<<<< HEAD
 from megatron.bridge.data.base import DatasetBuildContext
 from megatron.bridge.data.builders import (
     ChatSFTPreprocessingConfig,
@@ -72,11 +61,6 @@ from megatron.bridge.data.megatron_mimo.dp_utils import get_megatron_mimo_sampli
 from megatron.bridge.data.samplers import build_pretraining_data_loader
 from megatron.bridge.data.sources.hf import hf_dataset_supports_split
 from megatron.bridge.data.token_utils import extract_skipped_token_ids
-=======
-from megatron.bridge.data.megatron_mimo.dp_utils import get_megatron_mimo_sampling_info
-from megatron.bridge.data.samplers import build_pretraining_data_loader
-from megatron.bridge.data.vlm_datasets.hf_provider import HFDatasetConversationProvider
->>>>>>> main
 from megatron.bridge.models.megatron_mimo.megatron_mimo_config import (
     MegatronMIMOParallelismConfig,
     ModuleParallelismConfig,
@@ -89,10 +73,6 @@ from megatron.bridge.training.checkpointing import load_checkpoint
 from megatron.bridge.training.config import (
     CheckpointConfig,
     ConfigContainer,
-<<<<<<< HEAD
-=======
-    DatasetBuildContext,
->>>>>>> main
     LoggerConfig,
     OptimizerConfig,
     ProfilingConfig,
@@ -103,10 +83,7 @@ from megatron.bridge.training.megatron_mimo_step import forward_step as megatron
 from megatron.bridge.training.pretrain_megatron_mimo import pretrain_megatron_mimo
 from megatron.bridge.training.state import GlobalState, TrainState
 from megatron.bridge.training.tokenizers.config import TokenizerConfig
-<<<<<<< HEAD
 from megatron.bridge.training.utils.visual_inputs import GenericVisualInputs
-=======
->>>>>>> main
 
 
 G_COMPONENT_KEY_TO_FIELD = {
@@ -144,7 +121,6 @@ class Qwen35MIMOHFSpec:
         return self.spatial_merge_size**2
 
 
-<<<<<<< HEAD
 @dataclass(frozen=True)
 class MIMOBatchSpec:
     """Rank-local batch fields required by the active MIMO module/stage."""
@@ -170,8 +146,6 @@ class MIMOBatchSpec:
         return ",".join(enabled) if enabled else "none"
 
 
-=======
->>>>>>> main
 def _log(message: str) -> None:
     """Write a rank-prefixed message to stdout and the per-rank log file."""
     rank = dist.get_rank() if dist.is_initialized() else "?"
@@ -247,7 +221,6 @@ def _build_parallelism_config(component_specs: list[str], world_size: int) -> Me
     return MegatronMIMOParallelismConfig(module_parallelisms=module_parallelisms)
 
 
-<<<<<<< HEAD
 def _rank_grid_and_module(grids: dict[str, Any]) -> tuple[Any | None, str | None]:
     if not dist.is_initialized():
         return None, None
@@ -328,8 +301,6 @@ def _project_adapted_batch(
     return adapted
 
 
-=======
->>>>>>> main
 def _validate_mimo_batch_sizes(
     parallelism_config: MegatronMIMOParallelismConfig,
     args: argparse.Namespace,
@@ -372,13 +343,8 @@ def _build_mimo_provider(
     standard_provider.use_cpu_initialization = True
     if hasattr(standard_provider, "mtp_num_layers"):
         standard_provider.mtp_num_layers = None
-<<<<<<< HEAD
     if hasattr(standard_provider, "_enable_in_batch_packing"):
         standard_provider._enable_in_batch_packing = False
-=======
-    if hasattr(standard_provider, "_pack_sequences_in_batch"):
-        standard_provider._pack_sequences_in_batch = False
->>>>>>> main
 
     provider = MegatronMIMOProvider.from_standard_provider(
         standard_provider=standard_provider,
@@ -395,7 +361,6 @@ def _build_mimo_provider(
     return provider
 
 
-<<<<<<< HEAD
 def _build_dataset_source(args: argparse.Namespace) -> HFDatasetSourceConfig:
     if args.dataset_name is not None:
         if args.dataset_path is not None or args.dataset_subset is not None or args.schema_adapter is not None:
@@ -419,22 +384,11 @@ def _build_dataset_config(args: argparse.Namespace) -> DirectHFSFTDatasetConfig:
         preprocessing=ChatSFTPreprocessingConfig(),
         hf_processor_path=args.processor_path or args.hf_model,
         source=source,
-=======
-def _build_data_provider(args: argparse.Namespace) -> HFDatasetConversationProvider:
-    maker_name = args.dataset_maker
-    if not maker_name.startswith("make_"):
-        maker_name = f"make_{maker_name}_dataset"
-    provider = HFDatasetConversationProvider(
-        seq_length=args.seq_length,
-        hf_processor_path=args.processor_path or args.hf_model,
-        maker_name=maker_name,
->>>>>>> main
         num_workers=args.num_workers,
         dataloader_type=args.dataloader_type,
         data_sharding=True,
         pin_memory=True,
         persistent_workers=args.num_workers > 0,
-<<<<<<< HEAD
         enable_in_batch_packing=False,
         do_validation=do_validation,
         do_test=False,
@@ -442,14 +396,6 @@ def _build_data_provider(args: argparse.Namespace) -> HFDatasetConversationProvi
     )
     dataset_config.drop_last = True
     return dataset_config
-=======
-        pack_sequences_in_batch=False,
-        skip_test=True,
-        trust_remote_code=args.trust_remote_code,
-    )
-    provider.drop_last = True
-    return provider
->>>>>>> main
 
 
 def _pad_or_truncate_2d(tensor: torch.Tensor | None, target_len: int, pad_value: int | float) -> torch.Tensor | None:
@@ -476,7 +422,6 @@ def _normalized_visual_kwargs(batch: dict[str, Any]) -> dict[str, torch.Tensor]:
     return visual_inputs.normalized_for_model()
 
 
-<<<<<<< HEAD
 def _safe_int(value: Any) -> int | None:
     try:
         return int(value)
@@ -666,21 +611,15 @@ def _build_qwen_metadata_batch(
     )
 
 
-=======
->>>>>>> main
 def _adapt_qwen35_hf_batch(
     batch: dict[str, Any],
     spec: Qwen35MIMOHFSpec,
     *,
     seq_length: int,
     pad_to_seq_length: bool,
-<<<<<<< HEAD
     batch_spec: MIMOBatchSpec | None = None,
 ) -> dict[str, Any]:
     batch_spec = batch_spec or MIMOBatchSpec()
-=======
-) -> dict[str, Any]:
->>>>>>> main
     input_ids = batch.get("tokens") if batch.get("tokens") is not None else batch["input_ids"]
     labels = batch.get("labels")
     loss_mask = batch.get("loss_mask")
@@ -701,7 +640,6 @@ def _adapt_qwen35_hf_batch(
     pixel_values = visual_kwargs.get("pixel_values")
     image_grid_thw = visual_kwargs.get("image_grid_thw")
 
-<<<<<<< HEAD
     position_ids = None
     if batch_spec.position_ids:
         position_ids, _ = get_rope_index(
@@ -716,20 +654,6 @@ def _adapt_qwen35_hf_batch(
 
     modality_inputs = None
     if batch_spec.modality_inputs and pixel_values is not None and image_grid_thw is not None:
-=======
-    position_ids, _ = get_rope_index(
-        spec.spatial_merge_size,
-        spec.image_token_id,
-        spec.video_token_id,
-        spec.vision_start_token_id,
-        input_ids=input_ids,
-        image_grid_thw=image_grid_thw,
-        attention_mask=rope_attention_mask,
-    )
-
-    modality_inputs = None
-    if pixel_values is not None and image_grid_thw is not None:
->>>>>>> main
         vision_data, vision_grid_thw, _ = reorganize_inputs(
             input_ids=input_ids,
             pixel_values=pixel_values,
@@ -747,7 +671,6 @@ def _adapt_qwen35_hf_batch(
             }
         }
 
-<<<<<<< HEAD
     return _project_adapted_batch(
         {
             "input_ids": input_ids.contiguous(),
@@ -759,16 +682,6 @@ def _adapt_qwen35_hf_batch(
         },
         batch_spec,
     )
-=======
-    return {
-        "input_ids": input_ids.contiguous(),
-        "position_ids": position_ids.contiguous(),
-        "attention_mask": None,
-        "labels": None if labels is None else labels.contiguous(),
-        "loss_mask": None if loss_mask is None else loss_mask.contiguous(),
-        "modality_inputs": modality_inputs,
-    }
->>>>>>> main
 
 
 def _summarize_batch(batch: dict[str, Any], adapted: dict[str, Any], spec: Qwen35MIMOHFSpec) -> str:
@@ -803,19 +716,13 @@ class _Qwen35HFMimoCollateAdapter:
         spec: Qwen35MIMOHFSpec,
         seq_length: int,
         pad_to_seq_length: bool,
-<<<<<<< HEAD
         batch_spec: MIMOBatchSpec,
-=======
->>>>>>> main
     ) -> None:
         self.base_collate = base_collate
         self.spec = spec
         self.seq_length = seq_length
         self.pad_to_seq_length = pad_to_seq_length
-<<<<<<< HEAD
         self.batch_spec = batch_spec
-=======
->>>>>>> main
 
     def __call__(self, items: list[Any]) -> dict[str, Any]:
         batch = self.base_collate(items)
@@ -824,7 +731,6 @@ class _Qwen35HFMimoCollateAdapter:
             self.spec,
             seq_length=self.seq_length,
             pad_to_seq_length=self.pad_to_seq_length,
-<<<<<<< HEAD
             batch_spec=self.batch_spec,
         )
 
@@ -868,14 +774,11 @@ class _Qwen35HFMetadataMimoCollateAdapter:
             seq_length=self.seq_length,
             pad_to_seq_length=self.pad_to_seq_length,
             batch_spec=self.batch_spec,
-=======
->>>>>>> main
         )
 
 
 def _summarize_adapted_batch(adapted: dict[str, Any], spec: Qwen35MIMOHFSpec) -> str:
     input_ids = adapted["input_ids"]
-<<<<<<< HEAD
     image_text = 0
     llm_image_tokens = 0
     batch_size = 0
@@ -886,11 +789,6 @@ def _summarize_adapted_batch(adapted: dict[str, Any], spec: Qwen35MIMOHFSpec) ->
         llm_image_tokens = int(image_token_counts.sum().item())
         batch_size = int(input_ids.size(0))
         seq_len = int(input_ids.size(1))
-=======
-    image_token_counts = (input_ids == spec.image_token_id).sum(dim=1)
-    image_text = int((image_token_counts > 0).sum().item())
-    batch_size = int(input_ids.size(0))
->>>>>>> main
     modality_inputs = adapted.get("modality_inputs") or {}
     image_inputs = modality_inputs.get(spec.image_modality_name) or {}
     encoder_inputs = image_inputs.get(spec.image_encoder_key) or {}
@@ -898,13 +796,8 @@ def _summarize_adapted_batch(adapted: dict[str, Any], spec: Qwen35MIMOHFSpec) ->
     raw_images = 0 if grid_thw is None else int(grid_thw.reshape(-1, 3).size(0))
     return (
         f"batch_size={batch_size}, image_text={image_text}, "
-<<<<<<< HEAD
         f"llm_image_tokens={llm_image_tokens}, raw_images={raw_images}, "
         f"seq_len={seq_len}"
-=======
-        f"llm_image_tokens={int(image_token_counts.sum().item())}, raw_images={raw_images}, "
-        f"seq_len={input_ids.size(1)}"
->>>>>>> main
     )
 
 
@@ -939,7 +832,6 @@ def _make_build_data_iterators(spec: Qwen35MIMOHFSpec, args: argparse.Namespace)
             test_samples=0,
             tokenizer=None,
         )
-<<<<<<< HEAD
         if not isinstance(cfg.dataset, DirectHFSFTDatasetConfig):
             raise TypeError("MegatronMIMO Qwen3.5-VL requires DirectHFSFTDatasetConfig.")
         train_ds, _, _ = DirectHFSFTDatasetBuilder(cfg.dataset).build(context)
@@ -977,25 +869,6 @@ def _make_build_data_iterators(spec: Qwen35MIMOHFSpec, args: argparse.Namespace)
                 pad_to_seq_length=args.pad_to_seq_length,
                 batch_spec=batch_spec,
             )
-=======
-        train_ds, _, _ = cfg.dataset.build_datasets(context)
-        if train_ds is None:
-            raise ValueError("HF conversation provider did not build a train dataset.")
-        base_collate = getattr(train_ds, "collate_fn", None)
-        if base_collate is None:
-            raise ValueError("HF conversation train dataset does not expose collate_fn.")
-
-        # Wrap the dataset's collate so the MIMO adapt runs in worker processes
-        # alongside the HF VLM processor work; the main process used to spend
-        # ~1s/iter doing `get_rope_index` here via a generator that ran adapt
-        # post-`next(...)`.
-        collate_fn = _Qwen35HFMimoCollateAdapter(
-            base_collate=base_collate,
-            spec=spec,
-            seq_length=args.seq_length,
-            pad_to_seq_length=args.pad_to_seq_length,
-        )
->>>>>>> main
 
         train_loader = build_pretraining_data_loader(
             dataset=train_ds,
@@ -1014,16 +887,10 @@ def _make_build_data_iterators(spec: Qwen35MIMOHFSpec, args: argparse.Namespace)
 
         # `pretrain_megatron_mimo` calls `next(data_iterator)` per microbatch, so
         # return an iterator (DataLoader is iterable but not itself an iterator).
-<<<<<<< HEAD
         loader_iter: Iterator[dict[str, Any]] = iter(train_loader)
         if args.log_batches:
             loader_iter = _wrap_iter_logging(loader_iter, spec)
         return loader_iter, None
-=======
-        if args.log_batches:
-            return _wrap_iter_logging(train_loader, spec), None
-        return iter(train_loader), None
->>>>>>> main
 
     return _build_data_iterators
 
@@ -1109,11 +976,7 @@ def _register_converted_checkpoint_pre_wrap_hook(
 def _build_config(
     *,
     model_provider: MegatronMIMOProvider,
-<<<<<<< HEAD
     dataset_config: DirectHFSFTDatasetConfig,
-=======
-    data_provider: HFDatasetConversationProvider,
->>>>>>> main
     args: argparse.Namespace,
 ) -> ConfigContainer:
     optimizer_cfg, scheduler_cfg = distributed_fused_adam_with_cosine_annealing(
@@ -1170,11 +1033,7 @@ def _build_config(
         model=model_provider,
         optimizer=optimizer_cfg,
         scheduler=scheduler_cfg,
-<<<<<<< HEAD
         dataset=dataset_config,
-=======
-        dataset=data_provider,
->>>>>>> main
         logger=logger_cfg,
         tokenizer=TokenizerConfig(),
         checkpoint=_build_checkpoint_config(args),
@@ -1212,7 +1071,6 @@ def _default_model_tag(hf_model: str) -> str:
 
 def _resolve_default_paths(args: argparse.Namespace) -> None:
     model_tag = _default_model_tag(args.hf_model)
-<<<<<<< HEAD
     if args.dataset_name is None and args.dataset_path is None:
         if args.dataset_subset is not None or args.schema_adapter is not None:
             raise ValueError("--dataset-subset and --schema-adapter require --dataset-path.")
@@ -1224,12 +1082,6 @@ def _resolve_default_paths(args: argparse.Namespace) -> None:
     if args.checkpoint_dir is None:
         dataset_tag = args.dataset_name or args.schema_adapter or "native"
         run_name = args.run_name or f"{model_tag}_{dataset_tag}_mimo_hf"
-=======
-    if args.pretrained_checkpoint is None and args.load_checkpoint is None and not args.allow_random_init:
-        args.pretrained_checkpoint = str(Path(args.experiment_root) / "models" / "mimo" / f"{model_tag}-mimo")
-    if args.checkpoint_dir is None:
-        run_name = args.run_name or f"{model_tag}_cord_v2_mimo_hf"
->>>>>>> main
         args.checkpoint_dir = str(Path(args.experiment_root) / "results" / "mimo" / run_name)
     if args.log_dir is None:
         args.log_dir = str(Path(args.experiment_root) / "logs" / "mimo_hf")
@@ -1240,11 +1092,7 @@ def _resolve_default_paths(args: argparse.Namespace) -> None:
 
 
 def _parse_args() -> argparse.Namespace:
-<<<<<<< HEAD
     parser = argparse.ArgumentParser(description="MegatronMIMO Qwen3.5-VL direct Hugging Face SFT training")
-=======
-    parser = argparse.ArgumentParser(description="MegatronMIMO Qwen3.5-VL HF CORD-v2 validation training")
->>>>>>> main
     parser.add_argument("--hf-model", type=str, default="Qwen/Qwen3.5-0.8B", help="HF model id or local config path")
     parser.add_argument("--processor-path", type=str, default=None, help="HF processor path; defaults to --hf-model")
     parser.add_argument("--trust-remote-code", action="store_true")
@@ -1256,7 +1104,6 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--experiment-root", type=str, default=G_EXAMPLE_ROOT)
     parser.add_argument("--run-name", type=str, default=None)
-<<<<<<< HEAD
     parser.add_argument(
         "--dataset-name",
         type=str,
@@ -1277,9 +1124,6 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Enable a derived validation split; presets auto-enable it only when supported.",
     )
-=======
-    parser.add_argument("--dataset-maker", type=str, default="cord_v2")
->>>>>>> main
     parser.add_argument("--seq-length", type=int, default=4096)
     parser.add_argument("--micro-batch-size", type=int, default=1)
     parser.add_argument("--global-batch-size", type=int, default=8)
@@ -1337,11 +1181,7 @@ def _parse_args() -> argparse.Namespace:
         "--pad-to-seq-length",
         type=_str2bool,
         default=True,
-<<<<<<< HEAD
         help="Pad/truncate direct HF SFT batches to --seq-length before MIMO forward.",
-=======
-        help="Pad/truncate HF conversation batches to --seq-length before MIMO forward.",
->>>>>>> main
     )
     parser.add_argument("--profile", choices=("none", "nsys", "pytorch"), default="none")
     parser.add_argument("--profile-step-start", type=int, default=1)
@@ -1408,25 +1248,16 @@ def main() -> None:
         model_provider = _build_mimo_provider(hf_config, parallelism_config, args)
         _register_converted_checkpoint_pre_wrap_hook(model_provider, args.pretrained_checkpoint)
 
-<<<<<<< HEAD
         if args.dataset_name is not None:
             _log(f"building direct HF SFT data: preset={args.dataset_name}")
         else:
             _log(f"building direct HF SFT data: source={args.dataset_path} adapter={args.schema_adapter}")
         dataset_config = _build_dataset_config(args)
-=======
-        _log(f"building HF conversation data provider: maker={args.dataset_maker}")
-        data_provider = _build_data_provider(args)
->>>>>>> main
 
         _log(f"pretrained checkpoint: {args.pretrained_checkpoint}")
         _log(f"checkpoint dir: {args.checkpoint_dir}")
         _log("building training config")
-<<<<<<< HEAD
         cfg = _build_config(model_provider=model_provider, dataset_config=dataset_config, args=args)
-=======
-        cfg = _build_config(model_provider=model_provider, data_provider=data_provider, args=args)
->>>>>>> main
 
         _log("launching pretrain_megatron_mimo")
         pretrain_megatron_mimo(

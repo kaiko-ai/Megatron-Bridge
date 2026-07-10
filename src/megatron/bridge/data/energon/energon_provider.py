@@ -64,7 +64,6 @@ class EnergonProvider(DatasetProvider):
     num_workers: int_repr
     dataloader_type: str = "external"
     task_encoder: Optional[Any] = None
-<<<<<<< HEAD
     # Enable in-batch sequence packing
     enable_in_batch_packing: bool = False
     # Active user: Qwen3-VL. Its step needs unpacked batch tensors and builds
@@ -92,30 +91,6 @@ class EnergonProvider(DatasetProvider):
         self._sync_task_encoder_sequence_batching()
         dataset = EnergonMultiModalDataModule(
             path=self.path,
-=======
-    # Enable batch-level online sequence packing
-    pack_sequences_in_batch: bool = False
-    # Size of Energon's packing buffer. Required to enable Energon's sample-packing path: when
-    # None, Energon never calls the task encoder's select_samples_to_pack / pack_selected_samples
-    # hooks, so any packing_method set on the encoder is a silent no-op.
-    packing_buffer_size: Optional[int] = None
-    # Evaluate each metadataset val sub-blend separately. Pairs with ValidationConfig.multiple_validation_sets.
-    multiple_validation_sets: bool = False
-    # When False, the dataset's attention_mask is forwarded to the model (needed for packing
-    # modes that supply a block-causal / padding mask); when True it is dropped and the attn
-    # backend autogenerates one. Read by vlm_step.get_batch.
-    skip_getting_attention_mask_from_dataset: bool = True
-
-    def _make_datamodule(self, path: str, context: DatasetBuildContext) -> EnergonMultiModalDataModule:
-        if (
-            self.pack_sequences_in_batch
-            and self.task_encoder is not None
-            and hasattr(self.task_encoder, "pack_sequences")
-        ):
-            self.task_encoder.pack_sequences = True
-        return EnergonMultiModalDataModule(
-            path=path,
->>>>>>> main
             tokenizer=context.tokenizer if context.tokenizer is not None else self.tokenizer,
             image_processor=self.image_processor,
             seq_length=self.seq_length,
@@ -126,7 +101,6 @@ class EnergonProvider(DatasetProvider):
             packing_buffer_size=self.packing_buffer_size,
             pg_collection=context.pg_collection,
         )
-<<<<<<< HEAD
         # EnergonMultiModalDataModule.test_dataloader() returns None (no distinct test split);
         # honor that instead of aliasing the validation loader as a fake test set, which would
         # otherwise report validation metrics as test metrics whenever eval_iters > 0.
@@ -136,29 +110,3 @@ class EnergonProvider(DatasetProvider):
             iter(dataset.val_dataloader()),
             iter(test_dataloader) if test_dataloader is not None else None,
         )
-=======
-
-    def build_datasets(self, context: DatasetBuildContext):
-        assert self.path, "EnergonProvider.path must be set. Use CLI override: dataset.path=<path>"
-        # Energon sample packing (packing_buffer_size) and megatron-bridge batch-level online packing
-        # should not be called simultaneously.
-        if self.pack_sequences_in_batch and (self.packing_buffer_size or 0) > 0:
-            raise ValueError(
-                "pack_sequences_in_batch and packing_buffer_size are mutually exclusive: the former "
-                "enables megatron-bridge in-batch packing and the latter enables Energon sample "
-                "packing, so setting both packs the data twice. Disable one."
-            )
-        dataset = self._make_datamodule(self.path, context)
-        valid = iter(dataset.val_dataloader())
-        if self.multiple_validation_sets:
-            # Blended loader plus one val-only loader per sub-blend (sub-blends have no train split).
-            valid = (
-                valid,
-                [
-                    (name, iter(self._make_datamodule(blend_path, context).val_dataloader()))
-                    for name, blend_path in _parse_val_blend_entries(self.path)
-                ],
-            )
-        # Train un-wrapped (not iter()) so RerunDataIterator keeps save_state/restore_state for resume.
-        return dataset.train_dataloader(), valid, iter(dataset.val_dataloader())
->>>>>>> main

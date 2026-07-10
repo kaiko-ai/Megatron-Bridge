@@ -12,11 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-<<<<<<< HEAD
 """Unit tests for ``megatron.bridge.inference.text_generation`` (shared helpers)."""
-=======
-"""Unit tests for ``scripts/inference/text_generation.py``."""
->>>>>>> main
 
 from __future__ import annotations
 
@@ -30,11 +26,7 @@ import pytest
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-<<<<<<< HEAD
 _MODULE_PATH = _REPO_ROOT / "src" / "megatron" / "bridge" / "inference" / "text_generation.py"
-=======
-_SCRIPT_PATH = _REPO_ROOT / "scripts" / "inference" / "text_generation.py"
->>>>>>> main
 
 
 class _AttnBackend(Enum):
@@ -62,22 +54,6 @@ class _PassthroughInit:
         self.kwargs = kwargs
 
 
-<<<<<<< HEAD
-=======
-class _MegatronLLM(_PassthroughInit):
-    is_primary_rank = True
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, traceback):
-        return None
-
-    def generate(self, prompts, sampling_params):
-        return []
-
-
->>>>>>> main
 def _module(name: str, **attrs: object) -> types.ModuleType:
     module = types.ModuleType(name)
     for attr_name, value in attrs.items():
@@ -85,18 +61,10 @@ def _module(name: str, **attrs: object) -> types.ModuleType:
     return module
 
 
-<<<<<<< HEAD
 def _install_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
     stubs = {
         "megatron.core.inference.apis": _module(
             "megatron.core.inference.apis",
-=======
-def _install_text_generation_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
-    stubs = {
-        "megatron.core.inference.apis": _module(
-            "megatron.core.inference.apis",
-            MegatronLLM=_MegatronLLM,
->>>>>>> main
             SamplingParams=_SamplingParams,
         ),
         "megatron.core.inference.config": _module(
@@ -104,52 +72,24 @@ def _install_text_generation_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
             InferenceConfig=_PassthroughInit,
             MambaInferenceStateConfig=_MambaInferenceStateConfig,
         ),
-<<<<<<< HEAD
-=======
-        "megatron.core.inference.contexts": _module(
-            "megatron.core.inference.contexts",
-            StaticInferenceContext=_PassthroughInit,
-        ),
-        "megatron.core.inference.engines.static_engine": _module(
-            "megatron.core.inference.engines.static_engine",
-            StaticInferenceEngine=_PassthroughInit,
-        ),
-        "megatron.core.inference.model_inference_wrappers.gpt.gpt_inference_wrapper": _module(
-            "megatron.core.inference.model_inference_wrappers.gpt.gpt_inference_wrapper",
-            GPTInferenceWrapper=_PassthroughInit,
-        ),
-        "megatron.core.inference.text_generation_controllers.text_generation_controller": _module(
-            "megatron.core.inference.text_generation_controllers.text_generation_controller",
-            TextGenerationController=_PassthroughInit,
-        ),
->>>>>>> main
         "megatron.core.transformer.enums": _module(
             "megatron.core.transformer.enums",
             AttnBackend=_AttnBackend,
         ),
-<<<<<<< HEAD
         "megatron.core.utils": _module(
             "megatron.core.utils",
             get_attr_wrapped_model=lambda model, attr: getattr(model, attr),
         ),
-=======
->>>>>>> main
         "transformers": _module(
             "transformers",
             AutoConfig=_PassthroughInit,
             AutoTokenizer=_PassthroughInit,
-<<<<<<< HEAD
         ),
         "megatron.bridge": _module("megatron.bridge", AutoBridge=_PassthroughInit),
         "megatron.bridge.inference._tokenizer": _module(
             "megatron.bridge.inference._tokenizer",
             HFTokenizerAdapter=_PassthroughInit,
         ),
-=======
-            PreTrainedTokenizerBase=object,
-        ),
-        "megatron.bridge": _module("megatron.bridge", AutoBridge=_PassthroughInit),
->>>>>>> main
         "megatron.bridge.models.hf_pretrained.utils": _module(
             "megatron.bridge.models.hf_pretrained.utils",
             is_safe_repo=lambda *, hf_path, trust_remote_code: bool(trust_remote_code),
@@ -158,7 +98,6 @@ def _install_text_generation_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
             "megatron.bridge.training.utils.checkpoint_utils",
             get_hf_model_id_from_checkpoint=lambda path: None,
         ),
-<<<<<<< HEAD
         "megatron.bridge.utils.activation_map": _module(
             "megatron.bridge.utils.activation_map",
             str_to_dtype=lambda name: name,
@@ -166,16 +105,6 @@ def _install_text_generation_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
         "megatron.bridge.utils.common_utils": _module(
             "megatron.bridge.utils.common_utils",
             disable_mtp_for_inference=lambda model: None,
-=======
-        "megatron.bridge.utils.common_utils": _module(
-            "megatron.bridge.utils.common_utils",
-            disable_mtp_for_inference=lambda model: None,
-            get_local_rank_preinit=lambda: 0,
-            get_master_addr_safe=lambda: "localhost",
-            get_master_port_safe=lambda: 29500,
-            get_rank_safe=lambda: 0,
-            get_world_size_safe=lambda: 1,
->>>>>>> main
             print_rank_0=lambda message: None,
         ),
     }
@@ -185,13 +114,8 @@ def _install_text_generation_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def text_generation(monkeypatch):
-<<<<<<< HEAD
     _install_stubs(monkeypatch)
     spec = importlib.util.spec_from_file_location("bridge_text_generation_under_test", _MODULE_PATH)
-=======
-    _install_text_generation_stubs(monkeypatch)
-    spec = importlib.util.spec_from_file_location("text_generation_under_test", _SCRIPT_PATH)
->>>>>>> main
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -204,35 +128,19 @@ def text_generation(monkeypatch):
 
 def test_megatron_checkpoint_overrides_preserve_attention_backend(text_generation):
     provider = types.SimpleNamespace(cache_mla_latents=True)
-<<<<<<< HEAD
 
     overrides = text_generation._megatron_checkpoint_overrides(
         provider,
-=======
-    args = types.SimpleNamespace(
->>>>>>> main
         tp=2,
         pp=2,
         ep=4,
         etp=1,
         sequence_parallel=True,
-<<<<<<< HEAD
         dtype=text_generation.torch.bfloat16,
-=======
->>>>>>> main
         attention_backend="local",
         inference_moe_token_dispatcher_type="nvls",
     )
 
-<<<<<<< HEAD
-=======
-    overrides = text_generation._build_megatron_checkpoint_overrides(
-        provider,
-        args,
-        text_generation.torch.bfloat16,
-    )
-
->>>>>>> main
     assert overrides["attention_backend"] is text_generation.AttnBackend.local
     assert overrides["tensor_model_parallel_size"] == 2
     assert overrides["pipeline_model_parallel_size"] == 2
@@ -245,7 +153,6 @@ def test_megatron_checkpoint_overrides_preserve_attention_backend(text_generatio
     assert overrides["fp16"] is False
     assert overrides["cache_mla_latents"] is True
     assert overrides["inference_moe_token_dispatcher_type"] == "nvls"
-<<<<<<< HEAD
 
 
 def test_build_inference_config_rounds_max_requests_up_to_tp(text_generation):
@@ -369,5 +276,3 @@ def test_validate_sequence_length(text_generation):
     # exceeds -> raise
     with pytest.raises(ValueError, match="Longest prompt plus generation needs"):
         text_generation.validate_sequence_length(longest_prompt_tokens=4090, num_new_tokens=30, max_seq_length=4096)
-=======
->>>>>>> main

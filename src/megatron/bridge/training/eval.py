@@ -534,30 +534,6 @@ def evaluate_and_print_results(
     mlflow_writer = state.mlflow_logger
     comet_logger = state.comet_logger
 
-<<<<<<< HEAD
-=======
-    if should_fire(callback_manager, start_event):
-        callback_manager.fire(
-            start_event,
-            CallbackContext(
-                state=state,
-                model=model,
-                user_state=callback_manager.user_state,
-            ),
-        )
-
-    # Multiple validation sets: the validation data builder hands us a
-    # (combined_iterator, [(name, iterator), ...]) tuple. The combined iterator
-    # is evaluated and logged exactly like the single-set case below (the
-    # aggregate "lm loss validation"); the named per-set losses are appended on
-    # top afterwards. Any other shape (a single iterator, or the VPP per-chunk
-    # list) is just the combined iterator with no extra sets.
-    named_data_iterators: list = []
-    combined_data_iterator = data_iterator
-    if isinstance(data_iterator, tuple):
-        combined_data_iterator, named_data_iterators = data_iterator
-
->>>>>>> main
     total_loss_dict, collected_non_loss_data, timelimit = evaluate(
         state,
         forward_step_func,
@@ -625,31 +601,4 @@ def evaluate_and_print_results(
     print_rank_last(string)
     print_rank_last("-" * length)
 
-<<<<<<< HEAD
     return total_loss_dict
-=======
-    # Per-set losses, appended on top of the combined loss above.
-    if named_data_iterators:
-        evaluate_validation_sets(
-            state,
-            prefix,
-            forward_step_func,
-            named_data_iterators,
-            model,
-            config,
-            write_to_tensorboard=write_to_tensorboard,
-            verbose=verbose,
-            is_test=is_test,
-        )
-
-    if should_fire(callback_manager, end_event):
-        callback_manager.fire(
-            end_event,
-            CallbackContext(
-                state=state,
-                model=model,
-                user_state=callback_manager.user_state,
-                total_loss_dict=total_loss_dict,
-            ),
-        )
->>>>>>> main

@@ -1333,10 +1333,7 @@ Full fine-tuning without PEFT - all model parameters are updated:
 ```python
 from megatron.bridge.training.gpt_step import forward_step
 from megatron.bridge.training.finetune import finetune
-<<<<<<< HEAD
 from megatron.bridge.data.builders import GPTSFTDatasetConfig, PromptCompletionSFTPreprocessingConfig
-=======
->>>>>>> main
 
 config = ConfigContainer(
     model=GPTModelProvider(),

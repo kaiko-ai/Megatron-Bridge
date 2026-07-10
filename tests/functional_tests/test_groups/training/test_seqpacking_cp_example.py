@@ -131,16 +131,9 @@ class TestPeftSftExample:
         cfg.logger.log_interval = 1
         cfg.logger.tensorboard_dir = sft_tensorboard_dir
 
-<<<<<<< HEAD
         # Use a small packed local SFT dataset to exercise THD/context-parallel slicing
         cfg.dataset = GPTSFTDatasetConfig(
             dataset_root=dataset_root,
-=======
-        # Use a small packed SQuAD dataset to exercise THD/context-parallel slicing
-        cfg.dataset = HFDatasetConfig(
-            dataset_name="rajpurkar/squad",
-            process_example_fn=process_squad_example,
->>>>>>> main
             seq_length=256,
             dataloader_type="batch",
             num_workers=1,

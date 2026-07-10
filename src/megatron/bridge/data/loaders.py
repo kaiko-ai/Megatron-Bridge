@@ -269,10 +269,7 @@ def build_train_valid_test_data_loaders(
     if (
         train_ds is not None
         and cfg.dataset.dataloader_type != "external"
-<<<<<<< HEAD
         and drop_last
-=======
->>>>>>> main
         and len(train_ds) < cfg.train.global_batch_size
     ):
         raise RuntimeError(
