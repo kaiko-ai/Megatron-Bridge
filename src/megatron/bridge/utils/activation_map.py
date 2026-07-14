@@ -19,20 +19,13 @@ Used by:
 - ``ModelBridge`` for HuggingFace <-> Megatron activation conversion
 """
 
-import importlib
 import logging
 from typing import Callable
 
 import torch
 import torch.nn.functional as F
 from megatron.core.activations import fast_gelu, squared_relu
-
-
-try:
-    from megatron.core.fusions.fused_bias_geglu import quick_gelu
-except ImportError:
-    # Fallback if fused_bias_geglu is not available in the pinned MCore version
-    quick_gelu = F.gelu
+from megatron.core.fusions.fused_bias_geglu import quick_gelu
 
 
 logger = logging.getLogger(__name__)
@@ -59,6 +52,7 @@ ACTIVATION_FUNC_MAP.update(
         "torch.nn.functional.relu": F.relu,
         "torch.nn.functional.silu": F.silu,
         "torch.nn.functional.sigmoid": F.sigmoid,
+        "torch.tanh": torch.tanh,
     }
 )
 
@@ -78,25 +72,14 @@ def callable_to_str(fn: Callable) -> str | None:
 def str_to_callable(name: str) -> Callable:
     """Resolve an activation function name to its callable.
 
-    Accepts short names (``"silu"``), fully-qualified names
-    (``"torch.nn.functional.silu"``), or arbitrary dotted import paths.
+    Accepts registered short names (``"silu"``) and registered fully-qualified
+    aliases (``"torch.nn.functional.silu"``).
 
     Raises:
         ValueError: If the name cannot be resolved.
     """
     if name in ACTIVATION_FUNC_MAP:
         return ACTIVATION_FUNC_MAP[name]
-
-    # Fallback: try to import the dotted path
-    parts = name.rsplit(".", 1)
-    if len(parts) == 2:
-        try:
-            module = importlib.import_module(parts[0])
-            resolved = getattr(module, parts[1])
-            if callable(resolved):
-                return resolved
-        except (ImportError, AttributeError):
-            pass
 
     known_names = sorted(n for n in ACTIVATION_FUNC_MAP if "." not in n)
     raise ValueError(f"Unknown activation function: '{name}'. Known names: {known_names}")

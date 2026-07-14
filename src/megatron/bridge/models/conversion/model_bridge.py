@@ -1461,7 +1461,7 @@ class MegatronModelBridge(
         model_config: TransformerConfig,
     ) -> bool:
         """Shared embedding setting."""
-        return getattr(model_config, "share_embeddings_and_output_weights")
+        return getattr(model_config, "share_embeddings_and_output_weights", False)
 
     def _unwrap_name(self, name: str) -> str:
         """Unwrap name from DDP or other wrappers.
@@ -2018,6 +2018,7 @@ def stream_adapter_weights_megatron_to_hf(
     megatron_model: Union[MegatronModel, List[MegatronModel]],
     cpu: bool = True,
     show_progress: bool = True,
+    exclude_adapter_base_prefixes: Optional[Iterable[str]] = None,
 ) -> Iterable[HFWeightTuple]:
     """Bridge only adapter weights from Megatron to HuggingFace format."""
     ...
@@ -2109,12 +2110,14 @@ def register_bridge_implementation(
         megatron_model: Union[MegatronModel, List[MegatronModel]],
         cpu: bool = True,
         show_progress: bool = True,
+        exclude_adapter_base_prefixes: Optional[Iterable[str]] = None,
     ) -> Iterable[HFWeightTuple]:
         bridge = bridge_class()
         return bridge.stream_adapter_weights_megatron_to_hf(
             megatron_model,
             cpu=cpu,
             show_progress=show_progress,
+            exclude_adapter_base_prefixes=exclude_adapter_base_prefixes,
         )
 
     # Set meaningful names for debugging

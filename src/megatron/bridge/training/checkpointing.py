@@ -15,7 +15,6 @@
 """Input/output checkpointing."""
 
 import contextlib
-import inspect
 import os
 import random
 import shutil
@@ -89,6 +88,7 @@ from megatron.bridge.utils.common_utils import (
     print_rank_0,
 )
 from megatron.bridge.utils.import_utils import safe_import
+from megatron.bridge.utils.instantiate_utils import _validate_target_prefix
 
 
 _, HAVE_RESIL = safe_import("nvidia_resiliency_ext.checkpointing")
@@ -751,6 +751,11 @@ def create_checkpoint_manager(checkpoint_config: CheckpointConfig) -> Checkpoint
                 f"Expected fully qualified class name like 'mypackage.module.ClassName'."
             ) from err
 
+        _validate_target_prefix(
+            target=checkpoint_config.custom_manager_class,
+            full_key="checkpoint.custom_manager_class",
+        )
+
         try:
             module = importlib.import_module(module_path)
         except ImportError as e:
@@ -1073,11 +1078,6 @@ def save_checkpoint(
                 checkpointing_context["save_strategy"] = save_strategy
             end_ckpt = time()
             logger.debug(f"rank: {rank}, takes {end_ckpt - start_ckpt} to prepare state dict for ckpt ")
-            # Guard for main/dev branch submodule compat: async_strategy was removed in mcore dev.
-            _save_params = set(inspect.signature(dist_checkpointing.save).parameters)
-            _save_optional_kwargs: dict[str, Any] = {}
-            if "async_strategy" in _save_params:
-                _save_optional_kwargs["async_strategy"] = ckpt_cfg.async_strategy
             async_save_request = dist_checkpointing.save(
                 state_dict,
                 checkpoint_name,
@@ -1086,7 +1086,7 @@ def save_checkpoint(
                 validate_access_integrity=validate_sharding_integrity,
                 preprocess_common_before_consistancy_check=preprocess_common_state_dict_fn,
                 content_metadata=_clean_metadata_for_serialization(sharded_sd_metadata),
-                **_save_optional_kwargs,
+                async_strategy=ckpt_cfg.async_strategy,
             )
             # [ModelOpt]: save sharded modelopt_state (skip if model is empty, e.g., low-memory save mode)
             if model:
@@ -1667,8 +1667,10 @@ def generate_state_dict(
         _generate_model_state_dict(model, model_sd_kwargs, ckpt_cfg.ckpt_format, pg_collection=pg_collection)
     )
 
-    # Optimizer stuff.
-    if ckpt_cfg.save_optim:
+    # Optimizer stuff. During load, optimizer sharded-state scaffolding is
+    # required even if the next checkpoint should not save optimizer state.
+    include_optimizer_state = ckpt_cfg.save_optim or bool((optim_sd_kwargs or {}).get("is_loading"))
+    if include_optimizer_state:
         if optimizer is not None and not getattr(optimizer, "is_stub_optimizer", False):
             if ckpt_cfg.ckpt_format == "torch_dist":
                 state_dict["optimizer"] = optimizer.sharded_state_dict(state_dict, **(optim_sd_kwargs or {}))
