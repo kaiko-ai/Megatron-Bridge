@@ -41,6 +41,7 @@ from megatron.bridge.training.callbacks import CallbackContext, CallbackManager,
 from megatron.bridge.training.checkpointing import (
     CheckpointLoadContext,
     CheckpointManager,
+    _has_global_non_persistent_checkpoint,
     _load_checkpoint_from_path,
     create_checkpoint_manager,
     DATALOADER_STATE_SUBDIR,
@@ -110,11 +111,15 @@ def _should_load_checkpoint(cfg: ConfigContainer, checkpoint_manager: Checkpoint
         "local_checkpoint_manager" in checkpointing_context
         and checkpointing_context["local_checkpoint_manager"].find_latest() != -1
     )
+    has_global_non_persistent_checkpoint = _has_global_non_persistent_checkpoint(
+        cfg.checkpoint.load, cfg.checkpoint
+    )
 
     if cfg.peft is not None:
-        return cfg.checkpoint.load is not None and (
+        load_checkpoint_exists = cfg.checkpoint.load is not None and (
             checkpoint_exists(cfg.checkpoint.load) or is_hf_checkpoint_dir(cfg.checkpoint.load)
         )
+        return load_checkpoint_exists or has_global_non_persistent_checkpoint
 
     load_checkpoint_exists = cfg.checkpoint.load is not None and (
         checkpoint_exists(cfg.checkpoint.load) or is_hf_checkpoint_dir(cfg.checkpoint.load)
@@ -123,7 +128,12 @@ def _should_load_checkpoint(cfg: ConfigContainer, checkpoint_manager: Checkpoint
         checkpoint_exists(cfg.checkpoint.pretrained_checkpoint)
         or is_hf_checkpoint_dir(cfg.checkpoint.pretrained_checkpoint)
     )
-    should_load_checkpoint = load_checkpoint_exists or has_pretrained_checkpoint or has_local_checkpoint
+    should_load_checkpoint = (
+        load_checkpoint_exists
+        or has_pretrained_checkpoint
+        or has_local_checkpoint
+        or has_global_non_persistent_checkpoint
+    )
 
     if cfg._checkpoint_load_required and not should_load_checkpoint:
         raise FileNotFoundError(
