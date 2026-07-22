@@ -90,7 +90,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     # flash-mla (Megatron-LM's no_pypi_wheels group) has no PyPI wheel and is built from source by
     # the uv sync below. Point the compilers at the CCCL/libcu++ headers (under cccl/ in this base
     # image, not the default CUDA include path) and scope the build to the target archs.
-    export FLASH_MLA_DISABLE_SM90=1 NVCC_THREADS=4 \
+    export FLASH_MLA_DISABLE_SM90=1 NVCC_THREADS=4 MAX_JOBS=4 \
         CFLAGS="-I/usr/local/cuda/include/cccl${CFLAGS:+ $CFLAGS} -DNDEBUG" \
         CXXFLAGS="-I/usr/local/cuda/include/cccl${CXXFLAGS:+ $CXXFLAGS} -DNDEBUG" && \
     # Reinstall nvidia-cutlass-dsl in system site packages
