@@ -4,7 +4,7 @@ This document explains how we maintain the `kaiko-ai/Megatron-Bridge` fork of `N
 
 ## Why we fork
 
-We want kaiko-specific Bridge patches to live as real commits (not runtime monkey-patches in `libs/kbridge`), and we want to adopt newer Bridge fixes without waiting for the next NeMo container release. The fork is the home for both. The `kmbridge-nemo` Docker image in `kaiko-eng` installs Bridge from it. See [kaiko-ai/kaiko-eng#33267](https://github.com/kaiko-ai/kaiko-eng/issues/33267) for the rationale.
+We want kaiko-specific Bridge patches to live as real commits (not runtime monkey-patches in `projects/mllm_midtrain`), and we want to adopt newer Bridge fixes without waiting for the next NeMo container release. The fork is the home for both. The `kmbridge-nemo` Docker image in `kaiko-eng` installs Bridge from it. See [kaiko-ai/kaiko-eng#33267](https://github.com/kaiko-ai/kaiko-eng/issues/33267) for the rationale.
 
 ## TL;DR
 
@@ -12,7 +12,7 @@ We want kaiko-specific Bridge patches to live as real commits (not runtime monke
 - **kaiko branches** (`kaiko-main`, `kaiko-r0.5.0`) carry our commits on top of the matching upstream base. All kaiko work lives here.
 - **Naming rule:** no `kaiko-` prefix ⇒ pristine mirror (safe to fast-forward, never touched by us). Has `kaiko-` prefix ⇒ carries our work.
 - **Contributing:** branch off a kaiko branch, PR back into it, **squash-merge**.
-- **Syncing upstream:** merge the mirror into a temporary review branch, open a PR into the kaiko branch, and **complete it with a merge commit — never squash, never rebase-and-force-push a shared branch.**
+- **Syncing upstream:** fast-forward the mirror branch from upstream, create a temporary sync branch from the corresponding kaiko branch, merge the updated mirror into the sync branch, and open a PR back into the kaiko branch. Merge the PR with a merge commit — never squash, and never rebase-and-force-push a shared branch.
 
 ## Branch model
 
@@ -30,9 +30,9 @@ We want kaiko-specific Bridge patches to live as real commits (not runtime monke
 - A `kaiko-release` tag points at the tip of the current release-tracking kaiko branch, so consumers have a stable "latest kaiko release" reference.
 - Release branches follow the same pattern for every upstream release we track: `rX.Y.Z` (mirror) and `kaiko-rX.Y.Z` (kaiko).
 
-**Mirrors** are exact copies of the corresponding upstream branch. They exist so we have a stable local reference to upstream state and a clean base to diff and sync against, without every developer adding the upstream remote. They are **only ever fast-forwarded** from `upstream/*`. They never receive our commits, are never rebased, and are never force-pushed.
+**Mirrors** are exact copies of the corresponding upstream branch. They exist so we have a stable local reference to upstream state and a clean base to diff and sync against. They are **only ever fast-forwarded** from `upstream/*`. They never receive our commits, are never rebased, and are never force-pushed.
 
-**kaiko branches** are the upstream base plus our commits on top. This is where all kaiko development lands and where upstream changes are merged in via sync PRs. The default branch — what the `kmbridge-nemo` semver images point at — is the release-tracking kaiko branch (currently `kaiko-r0.5.0`).
+**kaiko branches** are the upstream base plus our commits on top. This is where all kaiko development lands and where upstream changes are merged in via sync PRs.
 
 ## First-time setup
 
@@ -51,15 +51,6 @@ After this:
 - `origin` = our fork, `upstream` = NVIDIA-NeMo.
 - Megatron-Core is vendored at `3rdparty/Megatron-LM` and initialized by `--recurse-submodules`. We do not fork Core separately — it follows Bridge's submodule pin. If you cloned without the flag, run `git submodule update --init`.
 - Every `git commit` runs ruff format / lint and the other hooks Bridge uses upstream.
-
-#### Forgot to sign off?
-
-NVIDIA rejects unsigned commits. Fix the whole branch in one go:
-
-```bash
-git rebase --signoff main
-git push --force-with-lease
-```
 
 ## Workflows
 
@@ -83,6 +74,15 @@ git commit -s -m "[training] feat: add step-0 validation flag"
 ```
 
 Sign-off is required (see below if you forgot).
+
+#### Forgot to sign off?
+
+NVIDIA rejects unsigned commits. Fix the whole branch in one go:
+
+```bash
+git rebase --signoff kaiko-main
+git push --force-with-lease
+```
 
 **Squash-merge feature PRs.** One commit per feature keeps kaiko history compact and makes our commits trivially identifiable against the mirror:
 
