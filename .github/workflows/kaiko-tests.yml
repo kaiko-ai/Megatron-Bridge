@@ -8,7 +8,7 @@ on:
   # turning this job (which checks out and executes PR contents) into a token/
   # secret exfiltration vector.
   pull_request:
-    branches: [main]
+    branches: [kaiko-main]
   workflow_dispatch:
 
 # Cancel superseded runs, i.e. don't let stale commits launch runs that pile up on a busy PR.
