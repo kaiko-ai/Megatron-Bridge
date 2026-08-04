@@ -121,7 +121,6 @@ class TestEnergonProvider:
         assert list(val_iter) == [3, 4]
         # No test split -> None, so do_test stays False downstream (val is not reused as test).
         assert test_iter is None
-        assert list(test_iter) == [3, 4]
 
     # build_datasets() re-applies provider fields onto the eagerly-built task encoder so a
     # dataset.seq_length=... override reaches it before data loading.
