@@ -464,7 +464,7 @@ class GlobalState:
 
     def _set_signal_handler(self) -> None:
         """Initializes the distributed signal handler based on the configuration."""
-        if self.cfg.train is not None:
+        if self.cfg.train is not None and self.cfg.train.exit_signal_handler:
             self._signal_handler = DistributedSignalHandler(self.cfg.train.exit_signal).__enter__()
 
     def reset_for_restart(self) -> None:
@@ -490,6 +490,8 @@ class GlobalState:
                 setattr(model_config, callback_name, None)
         self._timers = None
         self._train_state = None
+        if self._tensorboard_logger is not None:
+            self._tensorboard_logger.close()
         self._tensorboard_logger = None
         self._wandb_logger = None
         self._mlflow_logger = None

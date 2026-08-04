@@ -29,6 +29,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RECIPES_DIR = REPO_ROOT / "src" / "megatron" / "bridge" / "recipes"
+PERF_RECIPES_DIR = REPO_ROOT / "src" / "megatron" / "bridge" / "perf_recipes"
 TRAINING_README = REPO_ROOT / "scripts" / "training" / "README.md"
 DATASET_UTILS = REPO_ROOT / "src" / "megatron" / "bridge" / "recipes" / "utils" / "dataset_utils.py"
 LLAMA_README = REPO_ROOT / "tutorials" / "recipes" / "llama" / "README.md"
@@ -52,6 +53,16 @@ QWEN25_VL_DOCS = (
     REPO_ROOT / "docs" / "models" / "qwen" / "qwen2.5-vl.md",
     REPO_ROOT / "docs" / "fern" / "versions" / "nightly" / "pages" / "models" / "qwen" / "qwen2.5-vl.mdx",
 )
+QWEN3_DOCS = (
+    REPO_ROOT / "docs" / "models" / "qwen" / "qwen.md",
+    REPO_ROOT / "docs" / "fern" / "versions" / "nightly" / "pages" / "models" / "qwen" / "qwen.mdx",
+)
+QWEN3_ALIASES = RECIPES_DIR / "qwen" / "qwen3.py"
+QWEN3_H100_RECIPES = RECIPES_DIR / "qwen" / "h100" / "qwen3.py"
+QWEN3_MOE_ALIASES = RECIPES_DIR / "qwen" / "qwen3_moe.py"
+QWEN3_MOE_H100_RECIPES = RECIPES_DIR / "qwen" / "h100" / "qwen3_moe.py"
+QWEN3_NEXT_ALIASES = RECIPES_DIR / "qwen" / "qwen3_next.py"
+QWEN3_NEXT_H100_RECIPES = RECIPES_DIR / "qwen" / "h100" / "qwen3_next.py"
 VALOR_TUTORIAL = REPO_ROOT / "tutorials" / "data" / "valor32k-avqa" / "data-preparation.md"
 SPHINX_TUTORIAL_LINK_DOCS = (
     REPO_ROOT / "docs" / "training" / "data-preparation.md",
@@ -81,9 +92,12 @@ def _read(p: Path) -> str:
 
 
 def _defined_recipe_names() -> set[str]:
-    """All recipe-config functions and public aliases under src/.../recipes/**."""
+    """All recipe-config functions and public aliases under src/.../recipes/** and perf_recipes/**."""
     names: set[str] = set()
-    for py in RECIPES_DIR.rglob("*.py"):
+    recipe_files = list(RECIPES_DIR.rglob("*.py"))
+    if PERF_RECIPES_DIR.is_dir():
+        recipe_files += list(PERF_RECIPES_DIR.rglob("*.py"))
+    for py in recipe_files:
         tree = ast.parse(_read(py), filename=str(py))
         for node in tree.body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.endswith("_config"):
@@ -207,6 +221,37 @@ def test_model_examples_use_current_run_recipe_arguments():
     assert not offenders, f"Model examples use removed run_recipe.py arguments: {offenders}"
 
 
+def test_nemotron_and_qwen2_audio_finetune_launchers_use_exported_recipes():
+    """SFT and PEFT example recipes must match their launcher-visible aliases."""
+    launcher_expectations = {
+        MODEL_EXAMPLES / "nemotron" / "nemotron_3" / "nano" / "slurm_sft.sh": (
+            "${MODEL_NAME}_sft_config",
+            "nemotron_3_nano_finetune_config",
+        ),
+        MODEL_EXAMPLES / "nemotron" / "nemotron_3" / "nano" / "slurm_peft.sh": (
+            "${MODEL_NAME}_peft_config",
+            "nemotron_3_nano_finetune_config",
+        ),
+        MODEL_EXAMPLES / "qwen" / "qwen2_audio" / "sft.sh": (
+            "qwen2_audio_7b_sft_config",
+            "qwen2_audio_7b_finetune_config",
+        ),
+    }
+    for path, (expected_recipe, stale_recipe) in launcher_expectations.items():
+        text = _read(path)
+        assert expected_recipe in text
+        assert stale_recipe not in text
+
+    defined_recipes = _defined_recipe_names()
+    expected_recipes = {
+        "nemotron_3_nano_sft_config",
+        "nemotron_3_nano_peft_config",
+        "qwen2_audio_7b_sft_config",
+        "qwen2_audio_7b_peft_config",
+    }
+    assert expected_recipes <= defined_recipes
+
+
 def test_dclm_readme_megatron_lm_tool_path():
     """The DCLM tutorial points at the bundled submodule tool path (bug 6)."""
     gitmodules = _read(REPO_ROOT / ".gitmodules")
@@ -275,6 +320,286 @@ def test_multimodal_model_docs_use_current_launchers_and_conversion_flags():
     assert "--megatron-path /checkpoints/nemotron_omni" in valor
     assert "--hf_path" not in valor
     assert "--output_dir /checkpoints/nemotron_omni" not in valor
+
+
+def test_qwen3_recipe_examples_use_current_factory_api():
+    """Qwen3 recipe examples must call factories with their supported keywords."""
+    assert _read(QWEN3_DOCS[0]) == _read(QWEN3_DOCS[1])
+    expected_keywords = {
+        "qwen3_8b_pretrain_config": set(),
+        "qwen3_8b_sft_config": set(),
+        "qwen3_8b_peft_config": {"peft_scheme"},
+    }
+    for path in QWEN3_DOCS:
+        qwen3_docs = _read(path).split("\n## Qwen3\n", 1)[1].split("## Qwen2 / Qwen2.5", 1)[0]
+        examples = qwen3_docs.split("#### Pre-training Example", 1)[1].split("### Hugging Face Model Cards", 1)[0]
+        calls: dict[str, list[set[str | None]]] = {name: [] for name in expected_keywords}
+        for code in re.findall(r"```python\n(.*?)```", examples, re.DOTALL):
+            tree = ast.parse(code, filename=str(path))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in calls:
+                    calls[node.func.id].append({keyword.arg for keyword in node.keywords})
+
+        for name, allowed_keywords in expected_keywords.items():
+            assert calls[name] == [allowed_keywords], (
+                f"{path.relative_to(REPO_ROOT)} calls {name} with unsupported keywords: {calls[name]}"
+            )
+
+        assert examples.count("config.optimizer.lr =") == 2
+        assert examples.count("config.scheduler.lr_decay_iters = 1000") == 2
+        assert "config.scheduler.max_lr" not in examples
+
+
+def test_qwen3_moe_recipe_examples_match_source_signatures():
+    """Qwen3-MoE examples must pass only keywords accepted by public recipes."""
+    recipe_names = {
+        "qwen3_30b_a3b_peft_config",
+        "qwen3_30b_a3b_pretrain_config",
+        "qwen3_30b_a3b_sft_config",
+        "qwen3_235b_a22b_pretrain_config",
+    }
+    alias_targets: dict[str, str] = {}
+    for node in ast.parse(_read(QWEN3_MOE_ALIASES), filename=str(QWEN3_MOE_ALIASES)).body:
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        for imported_name in node.names:
+            if imported_name.asname in recipe_names:
+                alias_targets[imported_name.asname] = imported_name.name
+    assert set(alias_targets) == recipe_names
+
+    accepted_keywords: dict[str, set[str]] = {}
+    for node in ast.parse(_read(QWEN3_MOE_H100_RECIPES), filename=str(QWEN3_MOE_H100_RECIPES)).body:
+        if not isinstance(node, ast.FunctionDef) or node.name not in alias_targets.values():
+            continue
+        assert node.args.kwarg is None
+        accepted_keywords[node.name] = {
+            argument.arg for argument in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs)
+        }
+    assert set(accepted_keywords) == set(alias_targets.values())
+
+    for path in QWEN3_DOCS:
+        qwen3_moe_docs = _read(path).split("\n## Qwen3 MoE\n", 1)[1].split("\n## Qwen3\n", 1)[0]
+        examples = qwen3_moe_docs.split("#### Pre-training Examples", 1)[1].split("### Hugging Face Model Cards", 1)[0]
+        calls: dict[str, list[set[str | None]]] = {name: [] for name in recipe_names}
+        for code in re.findall(r"```python\n(.*?)```", examples, re.DOTALL):
+            tree = ast.parse(code, filename=str(path))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in calls:
+                    calls[node.func.id].append({keyword.arg for keyword in node.keywords})
+
+        for recipe_name in recipe_names:
+            assert len(calls[recipe_name]) == 1, (
+                f"{path.relative_to(REPO_ROOT)} should call {recipe_name} exactly once: {calls[recipe_name]}"
+            )
+            unsupported = calls[recipe_name][0] - accepted_keywords[alias_targets[recipe_name]]
+            assert not unsupported, (
+                f"{path.relative_to(REPO_ROOT)} calls {recipe_name} with unsupported keywords: {sorted(unsupported)}"
+            )
+
+
+def test_qwen3_next_recipe_examples_match_source_contracts():
+    """Qwen3-Next examples must match factory signatures, config ownership, and topology."""
+    assert _read(QWEN3_DOCS[0]) == _read(QWEN3_DOCS[1])
+    recipe_names = {
+        "qwen3_next_80b_a3b_pretrain_config",
+        "qwen3_next_80b_a3b_sft_config",
+    }
+    alias_targets: dict[str, str] = {}
+    for node in ast.parse(_read(QWEN3_NEXT_ALIASES), filename=str(QWEN3_NEXT_ALIASES)).body:
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        for imported_name in node.names:
+            if imported_name.asname in recipe_names:
+                alias_targets[imported_name.asname] = imported_name.name
+    assert set(alias_targets) == recipe_names
+
+    accepted_keywords: dict[str, set[str]] = {}
+    for node in ast.parse(_read(QWEN3_NEXT_H100_RECIPES), filename=str(QWEN3_NEXT_H100_RECIPES)).body:
+        if not isinstance(node, ast.FunctionDef) or node.name not in alias_targets.values():
+            continue
+        assert node.args.kwarg is None
+        accepted_keywords[node.name] = {
+            argument.arg for argument in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs)
+        }
+    assert set(accepted_keywords) == set(alias_targets.values())
+
+    assignments_by_recipe: dict[str, dict[str, object]] = {}
+    for path in QWEN3_DOCS:
+        section = _read(path).split("\n## Qwen3-Next\n", 1)[1].split("\n## Qwen3 MoE\n", 1)[0]
+        examples = section.split("#### Pre-training Example", 1)[1].split("### Hugging Face Model Cards", 1)[0]
+        calls: dict[str, list[ast.Call]] = {name: [] for name in recipe_names}
+        for code in re.findall(r"```python\n(.*?)```", examples, re.DOTALL):
+            tree = ast.parse(code, filename=str(path))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in calls:
+                    calls[node.func.id].append(node)
+
+            recipe_name = next(
+                (
+                    node.value.func.id
+                    for node in tree.body
+                    if isinstance(node, ast.Assign)
+                    and isinstance(node.value, ast.Call)
+                    and isinstance(node.value.func, ast.Name)
+                    and node.value.func.id in recipe_names
+                ),
+                None,
+            )
+            if path == QWEN3_DOCS[0] and recipe_name is not None:
+                assignments_by_recipe[recipe_name] = {
+                    ast.unparse(node.targets[0]): ast.literal_eval(node.value)
+                    for node in tree.body
+                    if isinstance(node, ast.Assign)
+                    and len(node.targets) == 1
+                    and ast.unparse(node.targets[0]).startswith("config.")
+                }
+
+        for recipe_name in recipe_names:
+            assert len(calls[recipe_name]) == 1
+            documented_keywords = {keyword.arg for keyword in calls[recipe_name][0].keywords}
+            unsupported = documented_keywords - accepted_keywords[alias_targets[recipe_name]]
+            assert not unsupported, (
+                f"{path.relative_to(REPO_ROOT)} calls {recipe_name} with unsupported keywords: {sorted(unsupported)}"
+            )
+
+    expected_owners = {
+        "qwen3_next_80b_a3b_pretrain_config": {
+            "config.dataset.data_path",
+            "config.checkpoint.save",
+            "config.logger.tensorboard_dir",
+            "config.train.train_iters",
+            "config.train.global_batch_size",
+            "config.scheduler.lr_decay_iters",
+            "config.model.seq_length",
+            "config.dataset.seq_length",
+        },
+        "qwen3_next_80b_a3b_sft_config": {
+            "config.checkpoint.pretrained_checkpoint",
+            "config.train.train_iters",
+            "config.train.global_batch_size",
+            "config.scheduler.lr_decay_iters",
+            "config.optimizer.lr",
+        },
+    }
+    assert set(assignments_by_recipe) == recipe_names
+    for recipe_name, expected_fields in expected_owners.items():
+        assignments = assignments_by_recipe[recipe_name]
+        assert set(assignments) == expected_fields
+        assert assignments["config.scheduler.lr_decay_iters"] == assignments["config.train.train_iters"]
+
+    docs_lines = set(_read(QWEN3_DOCS[0]).splitlines())
+    assert {
+        "| **Qwen3-Next-80B** | Pretrain | 1 | 4 | 8 | 32 | Pre-training (4 nodes) |",
+        "| **Qwen3-Next-80B** | Full SFT | 1 | 2 | 8 | 16 | Full supervised finetuning (2 nodes) |",
+    } <= docs_lines
+
+
+def test_qwen3_recipe_examples_match_source_signatures_and_nested_owners():
+    """Qwen3 examples must follow source signatures and nested config ownership."""
+    recipe_names = {
+        "qwen3_8b_pretrain_config",
+        "qwen3_8b_sft_config",
+        "qwen3_8b_peft_config",
+    }
+    alias_targets: dict[str, str] = {}
+    for node in ast.parse(_read(QWEN3_ALIASES), filename=str(QWEN3_ALIASES)).body:
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        for imported_name in node.names:
+            if imported_name.asname in recipe_names:
+                alias_targets[imported_name.asname] = imported_name.name
+    assert set(alias_targets) == recipe_names
+
+    accepted_keywords: dict[str, set[str]] = {}
+    for node in ast.parse(_read(QWEN3_H100_RECIPES), filename=str(QWEN3_H100_RECIPES)).body:
+        if not isinstance(node, ast.FunctionDef) or node.name not in alias_targets.values():
+            continue
+        assert node.args.kwarg is None
+        accepted_keywords[node.name] = {
+            argument.arg for argument in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs)
+        }
+    assert set(accepted_keywords) == set(alias_targets.values())
+
+    qwen3_docs = _read(QWEN3_DOCS[0]).split("\n## Qwen3\n", 1)[1].split("## Qwen2 / Qwen2.5", 1)[0]
+    examples = qwen3_docs.split("#### Pre-training Example", 1)[1].split("### Hugging Face Model Cards", 1)[0]
+    assignments_by_recipe: dict[str, dict[str, object]] = {}
+    for code in re.findall(r"```python\n(.*?)```", examples, re.DOTALL):
+        tree = ast.parse(code, filename=str(QWEN3_DOCS[0]))
+        recipe_name = next(
+            (
+                node.value.func.id
+                for node in tree.body
+                if isinstance(node, ast.Assign)
+                and isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Name)
+                and node.value.func.id in recipe_names
+            ),
+            None,
+        )
+        if recipe_name is None:
+            continue
+        factory_call = next(
+            node.value
+            for node in tree.body
+            if isinstance(node, ast.Assign)
+            and isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Name)
+            and node.value.func.id == recipe_name
+        )
+        assert {keyword.arg for keyword in factory_call.keywords} <= accepted_keywords[alias_targets[recipe_name]]
+        assignments_by_recipe[recipe_name] = {
+            ast.unparse(node.targets[0]): ast.literal_eval(node.value)
+            for node in tree.body
+            if isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and ast.unparse(node.targets[0]).startswith("config.")
+        }
+
+    expected_owners = {
+        "qwen3_8b_pretrain_config": {
+            "config.dataset.data_path",
+            "config.checkpoint.save",
+            "config.logger.tensorboard_dir",
+            "config.train.train_iters",
+            "config.train.global_batch_size",
+            "config.scheduler.lr_decay_iters",
+            "config.model.seq_length",
+            "config.dataset.seq_length",
+        },
+        "qwen3_8b_sft_config": {
+            "config.checkpoint.pretrained_checkpoint",
+            "config.train.train_iters",
+            "config.train.global_batch_size",
+            "config.scheduler.lr_decay_iters",
+            "config.optimizer.lr",
+        },
+        "qwen3_8b_peft_config": {
+            "config.checkpoint.pretrained_checkpoint",
+            "config.train.train_iters",
+            "config.train.global_batch_size",
+            "config.scheduler.lr_decay_iters",
+            "config.optimizer.lr",
+        },
+    }
+    assert set(assignments_by_recipe) == recipe_names
+    for recipe_name, expected_fields in expected_owners.items():
+        assignments = assignments_by_recipe[recipe_name]
+        assert set(assignments) == expected_fields
+        assert assignments["config.scheduler.lr_decay_iters"] == assignments["config.train.train_iters"]
+
+    expected_topologies = {
+        "| **Qwen3 0.6B-1.7B** | Pretrain / Full SFT / LoRA / DoRA | 1 | 1 | 1 | Single-GPU training |",
+        "| **Qwen3 4B** | Pretrain / Full SFT | 2 | 1 | 2 | Two-GPU training |",
+        "| **Qwen3 4B** | LoRA / DoRA | 1 | 1 | 1 | Single-GPU PEFT |",
+        "| **Qwen3 8B** | Pretrain | 1 | 1 | 16 | Convergence recipe with DP=16 |",
+        "| **Qwen3 8B** | Full SFT | 4 | 1 | 4 | Four-GPU full finetuning |",
+        "| **Qwen3 8B** | LoRA / DoRA | 1 | 1 | 1 | Single-GPU PEFT |",
+        "| **Qwen3 14B** | Pretrain / Full SFT | 8 | 1 | 8 | Single-node training |",
+        "| **Qwen3 14B** | LoRA / DoRA | 1 | 1 | 1 | Single-GPU PEFT |",
+        "| **Qwen3 32B** | Pretrain / Full SFT | 8 | 2 | 16 | Two-node training |",
+        "| **Qwen3 32B** | LoRA / DoRA | 1 | 1 | 1 | Single-GPU PEFT |",
+    }
+    assert expected_topologies <= set(qwen3_docs.splitlines())
 
 
 def test_sphinx_docs_link_out_of_tree_tutorials_as_urls():
