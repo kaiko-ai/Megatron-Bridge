@@ -28,11 +28,14 @@ jobs:
       IMAGE: ghcr.io/kaiko-ai/nvidia-nemo-mirror:26.06
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: true
 
       - name: Check out main as the baseline
         run: |
           git fetch --no-tags --depth=1 origin main
           git worktree add /tmp/base FETCH_HEAD
+          git -C /tmp/base submodule update --init 3rdparty/Megatron-LM
 
       # Image is ~60 GB unpacked and runner free disk varies, so reclaim ~20 GB
       # (preinstalled toolchains we don't use) to pull reliably. df brackets the pull.
