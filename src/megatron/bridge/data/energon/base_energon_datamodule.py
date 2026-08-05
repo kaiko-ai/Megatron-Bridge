@@ -49,10 +49,8 @@ class EnergonMultiModalDataModule:
         self,
         path: str,
         tokenizer,
-        image_processor=None,
         seq_length: int = 2048,
         micro_batch_size: int = 1,
-        global_batch_size: int = 1,
         num_workers: int = 1,
         num_val_workers: int | None = None,
         pin_memory: bool = True,
@@ -96,11 +94,9 @@ class EnergonMultiModalDataModule:
         super().__init__()
         self.path = path
         self.tokenizer = tokenizer
-        self.image_processor = image_processor
         self.seq_length = seq_length
         self.decoder_seq_length = decoder_seq_length
         self.micro_batch_size = micro_batch_size
-        self.global_batch_size = global_batch_size
         self.num_workers = num_workers
         self.pin_memory = pin_memory
         self.multimodal_sample_config = multimodal_sample_config
