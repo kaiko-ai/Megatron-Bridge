@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,11 +12,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Run a Megatron Bridge library recipe in an existing distributed environment.
+"""Run a Megatron Bridge recipe in an existing distributed environment.
 
 Select either a model name with --model or a complete recipe function with
---recipe. The public launcher accepts one training mode, a direct dataset name,
-runner controls, common convenience arguments, and trailing KEY=VALUE
+--recipe. The launcher discovers complete library and benchmark recipes
+by their exported function name. It accepts one training mode, a direct dataset
+name, runner controls, common convenience arguments, and trailing KEY=VALUE
 ConfigContainer overrides. Slurm resources, containers, mounts, and environment
 forwarding are owned by setup_experiment.py.
 
@@ -60,29 +61,58 @@ Checkpointing:
 For example:
   run_recipe.py --model gpt_oss_20b --mode pretrain --dataset mock \\
     -sl 8192 -mb 1 -tp 2 model.sequence_parallel=true
+
+  run_recipe.py \\
+    --recipe qwen3_30b_a3b_pretrain_16gpu_h100_bf16_config --mode pretrain
 """
+
+from __future__ import annotations
 
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+
+logger = logging.getLogger(__name__)
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
+COMMON_SCRIPT_DIR = SCRIPT_DIR.parent / "common"
+if str(COMMON_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(COMMON_SCRIPT_DIR))
 
+from benchmark_parallelism import (  # noqa: E402
+    ParallelTopology,
+    data_parallel_size,
+    topology_from_config,
+    weak_scaled_global_batch_size,
+)
+from recipe_metadata import (  # noqa: E402
+    BenchmarkRecipeMetadata,
+    infer_recipe_mode,
+    recipe_step,
+    recipe_steps_match,
+    recipe_task,
+    resolved_benchmark_recipe_metadata,
+    validate_benchmark_recipe_scope,
+)
 from recipe_runner import (  # noqa: E402
     apply_cli_overrides,
     apply_determinism,
     apply_runtime_environment,
+    bootstrap_recipe_environment,
     load_forward_step,
     load_recipe,
     run_config,
     sync_finetuning_cp_invariants,
     sync_model_dataset_sequence_length,
+    sync_model_pipeline_layout,
     sync_offline_packing_alignment,
 )
 
@@ -91,7 +121,10 @@ from megatron.bridge.recipes.utils.dataset_utils import (  # noqa: E402
     build_dataset_config,
     dataset_train_mode,
 )
-from megatron.bridge.training.config import ConfigContainer  # noqa: E402
+
+
+if TYPE_CHECKING:
+    from megatron.bridge.training.config import ConfigContainer
 
 
 PublicMode = Literal["pretrain", "sft", "lora", "dora"]
@@ -134,7 +167,7 @@ def _build_parser() -> argparse.ArgumentParser:
     selection = parser.add_argument_group("Selection")
     recipe_selection = selection.add_mutually_exclusive_group(required=True)
     recipe_selection.add_argument("--model", help="Model recipe stem, for example gpt_oss_20b.")
-    recipe_selection.add_argument("--recipe", help="Complete library recipe function name.")
+    recipe_selection.add_argument("--recipe", help="Complete recipe function name.")
     selection.add_argument(
         "--mode",
         choices=["pretrain", "sft", "lora", "dora"],
@@ -143,9 +176,8 @@ def _build_parser() -> argparse.ArgumentParser:
     selection.add_argument(
         "--step-func",
         "--step_func",
-        default="llm_step",
         dest="step_func",
-        help="Forward-step registry name; most LLM recipes use the default.",
+        help="Forward-step registry name; defaults to the selected recipe's registered modality step.",
     )
 
     data = parser.add_argument_group("Data")
@@ -256,59 +288,144 @@ def _train_mode(mode: PublicMode) -> TrainMode:
     return "pretrain" if mode == "pretrain" else "finetune"
 
 
-def _recipe_task(mode: PublicMode) -> str:
-    """Map the public mode to a library recipe suffix."""
-    return "peft" if mode in {"lora", "dora"} else mode
-
-
-def _infer_recipe_mode(recipe_name: str) -> PublicMode | None:
-    """Infer a public mode from a conventional library recipe name."""
-    name = f"_{recipe_name.lower().strip('_')}_"
-    if "_pretrain_" in name:
-        return "pretrain"
-    if "_sft_" in name or "_finetune_" in name:
-        return "sft"
-    if "_dora_" in name:
-        return "dora"
-    if "_peft_" in name or "_lora_" in name:
-        return "lora"
-    return None
-
-
 def _infer_mode(args: argparse.Namespace) -> None:
     """Infer an omitted training mode from a conventional recipe name."""
     if args.mode is None and args.recipe:
-        args.mode = _infer_recipe_mode(args.recipe)
+        args.mode = infer_recipe_mode(args.recipe)
     if args.mode is None:
         raise ValueError("Unable to infer training mode; pass --mode or use a conventional --recipe name.")
 
 
 def _validate_recipe_mode(recipe_name: str, mode: PublicMode) -> None:
     """Reject a conventional full recipe name that contradicts ``--mode``."""
-    name = f"_{recipe_name.lower().strip('_')}_"
-    recipe_mode: str | None = None
-    if "_pretrain_" in name:
-        recipe_mode = "pretrain"
-    elif "_sft_" in name or "_finetune_" in name:
-        recipe_mode = "sft"
-    elif any(marker in name for marker in ("_peft_", "_lora_", "_dora_")):
-        recipe_mode = "peft"
-
-    expected = _recipe_task(mode)
-    if recipe_mode is not None and recipe_mode != expected:
+    recipe_mode = infer_recipe_mode(recipe_name)
+    if recipe_mode is not None and recipe_task(recipe_mode) != recipe_task(mode):
         raise ValueError(f"Mode '{mode}' is incompatible with recipe '{recipe_name}'.")
 
 
+def _current_world_size() -> int | None:
+    """Return the distributed world size supplied by torchrun or Slurm, when available."""
+    for variable_name in ("WORLD_SIZE", "SLURM_NTASKS"):
+        value = os.environ.get(variable_name)
+        if value is None:
+            continue
+        world_size = int(value)
+        if world_size < 1:
+            raise ValueError(f"{variable_name} must be positive, got {value!r}.")
+        return world_size
+    return None
+
+
+def _benchmark_world_size(metadata: BenchmarkRecipeMetadata, *, dryrun: bool) -> int:
+    """Resolve the requested benchmark world size from the active launcher."""
+    world_size = _current_world_size()
+    if world_size is None:
+        if dryrun:
+            return metadata.num_gpus
+        raise ValueError(
+            "Benchmark recipes require an existing distributed environment with the world size set by torchrun "
+            "or Slurm."
+        )
+    return world_size
+
+
+def _config_override_is_explicit(cli_overrides: list[str], field_name: str) -> bool:
+    """Return whether CLI overrides explicitly own a config field or its parent."""
+    parent_name = field_name.split(".", maxsplit=1)[0]
+    for override in cli_overrides:
+        override_name = override.lstrip("+~").split("=", maxsplit=1)[0]
+        if override_name in {field_name, parent_name}:
+            return True
+    return False
+
+
+def _apply_benchmark_weak_scaling(
+    recipe: ConfigContainer,
+    metadata: BenchmarkRecipeMetadata,
+    cli_overrides: list[str],
+    *,
+    canonical_topology: ParallelTopology,
+    canonical_global_batch_size: int,
+    world_size: int,
+) -> ConfigContainer:
+    """Validate topology and preserve samples per DP rank."""
+    model = getattr(recipe, "model", None)
+    canonical_dp = data_parallel_size(num_gpus=metadata.num_gpus, topology=canonical_topology)
+    requested_dp = data_parallel_size(num_gpus=world_size, topology=topology_from_config(model))
+
+    if _config_override_is_explicit(cli_overrides, "train.global_batch_size") or requested_dp == canonical_dp:
+        return recipe
+
+    train = getattr(recipe, "train", None)
+    scaled_gbs = weak_scaled_global_batch_size(
+        base_gbs=canonical_global_batch_size,
+        base_data_parallel=canonical_dp,
+        data_parallel=requested_dp,
+    )
+    train.global_batch_size = scaled_gbs
+    logger.info(
+        "Weak scaled benchmark global batch size from %d to %d for DP %d -> %d.",
+        canonical_global_batch_size,
+        scaled_gbs,
+        canonical_dp,
+        requested_dp,
+    )
+    return recipe
+
+
+def _apply_benchmark_runtime_defaults(
+    recipe: ConfigContainer,
+    metadata: BenchmarkRecipeMetadata,
+    cli_overrides: list[str],
+) -> ConfigContainer:
+    """Preserve flat-runner defaults that are not yet encoded in the recipe factory."""
+    optimizer = getattr(recipe, "optimizer", None)
+    precision_aware_field = "optimizer.use_precision_aware_optimizer"
+    precision_aware_is_explicit = any(
+        override.lstrip("+~").split("=", 1)[0] in {"optimizer", precision_aware_field} for override in cli_overrides
+    )
+    if (
+        not precision_aware_is_explicit
+        and metadata.precision == "bf16"
+        and getattr(optimizer, "optimizer", None) == "adam"
+    ):
+        optimizer.use_precision_aware_optimizer = True
+    return recipe
+
+
+def _apply_benchmark_dataset_defaults(
+    recipe: ConfigContainer,
+    metadata: BenchmarkRecipeMetadata,
+) -> ConfigContainer:
+    """Preserve the flat runner's mock-data default for text finetuning benchmarks."""
+    if metadata.task in {"sft", "peft"} and recipe_steps_match(recipe_step(metadata.recipe_name), "llm_step"):
+        source_dataset = getattr(recipe, "dataset", None)
+        mock_dataset = build_dataset_config(recipe, "mock")
+        for field_name in ("num_workers", "pin_memory", "persistent_workers"):
+            if (
+                source_dataset is not None
+                and hasattr(source_dataset, field_name)
+                and hasattr(mock_dataset, field_name)
+            ):
+                setattr(mock_dataset, field_name, getattr(source_dataset, field_name))
+        if hasattr(mock_dataset, "split"):
+            mock_dataset.split = "99990,8,2"
+        recipe.dataset = mock_dataset
+    return recipe
+
+
+def _selected_recipe_name(args: argparse.Namespace) -> str:
+    """Return the complete recipe function name selected by public arguments."""
+    return args.recipe or f"{args.model}_{recipe_task(args.mode)}_config"
+
+
 def _load_selected_recipe(args: argparse.Namespace) -> ConfigContainer:
-    """Load the requested library recipe."""
+    """Load the requested recipe by its complete name or model-derived library name."""
     peft_scheme = args.mode if args.mode in {"lora", "dora"} else None
-    recipe_name = args.recipe or f"{args.model}_{_recipe_task(args.mode)}_config"
+    recipe_name = _selected_recipe_name(args)
     if args.recipe:
         _validate_recipe_mode(recipe_name, args.mode)
-    return load_recipe(
-        recipe_name,
-        peft_scheme=peft_scheme,
-    )
+    return load_recipe(recipe_name, peft_scheme=peft_scheme)
 
 
 def _apply_dataset(recipe: ConfigContainer, args: argparse.Namespace) -> ConfigContainer:
@@ -318,7 +435,8 @@ def _apply_dataset(recipe: ConfigContainer, args: argparse.Namespace) -> ConfigC
 
     recipe.dataset = build_dataset_config(recipe, args.dataset)
     requested_train_mode = _train_mode(args.mode)
-    if dataset_train_mode(recipe.dataset) != requested_train_mode:
+    required_train_mode = dataset_train_mode(recipe.dataset)
+    if required_train_mode is not None and required_train_mode != requested_train_mode:
         raise ValueError(f"Mode '{args.mode}' is incompatible with dataset '{args.dataset}'.")
     return recipe
 
@@ -334,26 +452,71 @@ def parse_args(argv: list[str] | None = None) -> tuple[argparse.Namespace, list[
 
 
 def main(argv: list[str] | None = None) -> None:
-    """Load, configure, and execute one library recipe."""
+    """Load, configure, and execute one library or benchmark recipe."""
     logging.basicConfig(level=logging.INFO)
     args, cli_overrides = parse_args(argv)
 
+    recipe_name = _selected_recipe_name(args)
+    benchmark_metadata = resolved_benchmark_recipe_metadata(recipe_name)
+    if benchmark_metadata is not None:
+        validate_benchmark_recipe_scope(
+            benchmark_metadata,
+            mode=args.mode,
+            step_func=args.step_func,
+            dataset=args.dataset,
+        )
+
     recipe = _load_selected_recipe(args)
+    if benchmark_metadata is not None:
+        recipe = _apply_benchmark_dataset_defaults(recipe, benchmark_metadata)
     recipe = _apply_dataset(recipe, args)
     recipe = apply_determinism(recipe, deterministic=args.deterministic)
+    benchmark_canonical_topology = None
+    benchmark_canonical_global_batch_size = None
+    if benchmark_metadata is not None:
+        benchmark_canonical_topology = topology_from_config(getattr(recipe, "model", None))
+        benchmark_canonical_global_batch_size = getattr(getattr(recipe, "train", None), "global_batch_size", 1)
     recipe = apply_cli_overrides(recipe, cli_overrides)
-    recipe = apply_runtime_environment(recipe)
-    mode = _train_mode(args.mode)
-    recipe = sync_finetuning_cp_invariants(recipe, mode=mode)
+    recipe = sync_model_pipeline_layout(recipe, cli_overrides=cli_overrides)
+    benchmark_world_size = None
+    if benchmark_metadata is not None:
+        recipe = _apply_benchmark_runtime_defaults(recipe, benchmark_metadata, cli_overrides)
+        benchmark_world_size = _benchmark_world_size(benchmark_metadata, dryrun=args.dryrun)
+        recipe = _apply_benchmark_weak_scaling(
+            recipe,
+            benchmark_metadata,
+            cli_overrides,
+            canonical_topology=benchmark_canonical_topology,
+            canonical_global_batch_size=benchmark_canonical_global_batch_size,
+            world_size=benchmark_world_size,
+        )
+    configuration_mode = _train_mode(args.mode)
+
+    if benchmark_metadata is not None:
+        recipe = bootstrap_recipe_environment(
+            recipe,
+            script_path=str(Path(__file__).resolve()),
+            argv=list(argv) if argv is not None else sys.argv[1:],
+        )
+        execution_mode = "pretrain"
+        step_mode = benchmark_metadata.task
+    else:
+        recipe = apply_runtime_environment(recipe)
+        execution_mode = configuration_mode
+        step_mode = configuration_mode
+
+    recipe = sync_finetuning_cp_invariants(recipe, mode=configuration_mode)
     recipe = sync_offline_packing_alignment(recipe)
     recipe = sync_model_dataset_sequence_length(recipe)
 
-    forward_step = load_forward_step(args.step_func, mode=mode)
+    step_func_name = args.step_func or recipe_step(recipe_name)
+    forward_step = load_forward_step(step_func_name, mode=step_mode)
     run_config(
         config=recipe,
-        mode=mode,
+        mode=execution_mode,
         step_func=forward_step,
         dryrun=args.dryrun,
+        dryrun_world_size=benchmark_world_size,
         dump_environment=args.dump_env,
     )
 

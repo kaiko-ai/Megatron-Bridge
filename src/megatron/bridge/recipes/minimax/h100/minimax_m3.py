@@ -17,6 +17,7 @@ import torch
 from megatron.bridge import AutoBridge
 from megatron.bridge.recipes.common import _pretrain_common, _sft_common
 from megatron.bridge.recipes.utils.dataset_utils import default_squad_config
+from megatron.bridge.recipes.utils.environment_utils import COMMON_RECIPE_ENV_VARS
 from megatron.bridge.recipes.utils.tokenizer_utils import DEFAULT_NULL_TOKENIZER_VOCAB_SIZE
 from megatron.bridge.training.comm_overlap import CommOverlapConfig
 from megatron.bridge.training.config import ConfigContainer
@@ -36,9 +37,10 @@ def minimax_m3_pretrain_256gpu_h100_bf16_config() -> ConfigContainer:
     """
     cfg = _pretrain_common()
 
-    cfg.model = AutoBridge.from_hf_pretrained(MINIMAX_M3_HF_PATH, trust_remote_code=True).to_megatron_provider(
+    vlm_provider = AutoBridge.from_hf_pretrained(MINIMAX_M3_HF_PATH, trust_remote_code=True).to_megatron_provider(
         load_weights=False
     )
+    cfg.model = vlm_provider.to_text_provider()
 
     # Parallelism
     cfg.model.tensor_model_parallel_size = 2
@@ -125,6 +127,10 @@ def minimax_m3_pretrain_256gpu_h100_bf16_config() -> ConfigContainer:
     cfg.ddp.grad_reduce_in_fp32 = False
     cfg.ddp.data_parallel_sharding_strategy = "no_shard"
 
+    # Keep the complete process environment visible on the recipe.
+    cfg.env_vars = {
+        **COMMON_RECIPE_ENV_VARS,
+    }
     return cfg
 
 
@@ -135,9 +141,10 @@ def minimax_m3_sft_128gpu_h100_bf16_config() -> ConfigContainer:
     """
     cfg = _sft_common()
 
-    cfg.model = AutoBridge.from_hf_pretrained(MINIMAX_M3_HF_PATH, trust_remote_code=True).to_megatron_provider(
+    vlm_provider = AutoBridge.from_hf_pretrained(MINIMAX_M3_HF_PATH, trust_remote_code=True).to_megatron_provider(
         load_weights=False
     )
+    cfg.model = vlm_provider.to_text_provider()
 
     # Parallelism
     cfg.model.tensor_model_parallel_size = 2
@@ -188,6 +195,10 @@ def minimax_m3_sft_128gpu_h100_bf16_config() -> ConfigContainer:
     cfg.ddp.check_for_nan_in_grad = True
     cfg.ddp.use_megatron_fsdp = False
 
+    # Keep the complete process environment visible on the recipe.
+    cfg.env_vars = {
+        **COMMON_RECIPE_ENV_VARS,
+    }
     return cfg
 
 

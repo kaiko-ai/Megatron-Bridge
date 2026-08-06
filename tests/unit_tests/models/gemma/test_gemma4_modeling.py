@@ -23,6 +23,8 @@ from types import SimpleNamespace
 import pytest
 import torch
 from megatron.core import tensor_parallel
+from megatron.core.models.common.embeddings.rotary_pos_embedding import apply_rotary_pos_emb
+from megatron.training.config.instantiate_utils import instantiate
 
 from megatron.bridge.models.gemma.modeling_gemma4 import (
     Gemma4DenseMLP,
@@ -49,6 +51,7 @@ from megatron.bridge.models.gemma.modeling_gemma4 import (
     _is_gemma4_sliding_layer,
     _logit_softcapping,
     _patch_ple_block_threading,
+    gemma4_block_spec,
     get_gemma4_layer_spec,
     wire_gemma4_kv_sharing,
 )
@@ -896,8 +899,44 @@ class TestGemma4RotaryEmbeddings:
             use_cpu_initialization=True,
         )
 
-        assert rotary.inv_freq.numel() == 2
+        assert rotary.inv_freq.numel() == 8
+        expected_rotated = 1.0 / (1_000_000 ** (torch.arange(0, 4, 2, dtype=torch.float32) / 16))
+        torch.testing.assert_close(rotary.inv_freq[:2], expected_rotated)
+        torch.testing.assert_close(rotary.inv_freq[2:], torch.zeros(6))
         assert rotary.rope_local.inv_freq.numel() == 4
+
+    def test_moe_global_rotary_matches_hf_proportional_coordinate_layout(self):
+        head_dim = 16
+        partial_rotary_factor = 0.25
+        rotary_base = 1_000_000
+        position = 3
+        rotary = Gemma4RotaryEmbedding(
+            kv_channels=8,
+            rotary_percent=1.0,
+            rotary_base=rotary_base,
+            rotary_base_local=10_000,
+            global_kv_channels=head_dim,
+            global_rotary_percent=partial_rotary_factor,
+            use_cpu_initialization=True,
+        )
+
+        hidden_states = torch.arange(1, head_dim + 1, dtype=torch.float32).view(1, 1, 1, head_dim)
+        freqs = rotary.get_freqs_non_repeated(1, offset=position)
+        freqs = torch.cat((freqs, freqs), dim=-1)[:, None, None, :]
+        config = SimpleNamespace(apply_rope_fusion=False, rotary_interleaved=False, mrope_section=None)
+        actual = apply_rotary_pos_emb(hidden_states, freqs, config, cp_group=object())
+
+        expected = hidden_states.clone()
+        rope_angles = int(partial_rotary_factor * head_dim // 2)
+        angles = position / (rotary_base ** (torch.arange(0, 2 * rope_angles, 2, dtype=torch.float32) / head_dim))
+        cos = torch.cos(angles)
+        sin = torch.sin(angles)
+        left = hidden_states[..., :rope_angles]
+        right = hidden_states[..., head_dim // 2 : head_dim // 2 + rope_angles]
+        expected[..., :rope_angles] = left * cos - right * sin
+        expected[..., head_dim // 2 : head_dim // 2 + rope_angles] = right * cos + left * sin
+
+        torch.testing.assert_close(actual, expected)
 
     def test_dense_rotary_forwards_to_sliding_and_full_rope(self):
         class FakeRope:
@@ -1848,6 +1887,18 @@ class TestGemma4MoEHelpers:
         assert attn_submodules.core_attention is Gemma4TEDotProductAttention
         assert attn_submodules.linear_proj == "old_proj"
 
+    def test_public_gemma4_block_spec_checkpoint_target_is_instantiable(self):
+        restored = instantiate(
+            {
+                "_target_": "megatron.bridge.models.gemma.modeling_gemma4.gemma4_block_spec",
+                "_partial_": True,
+                "use_transformer_engine": False,
+            }
+        )
+
+        assert isinstance(restored, partial)
+        assert restored.func is gemma4_block_spec
+
     def test_transformer_layer_post_mlp_adds_bias_and_layer_scalar(self):
         layer = object.__new__(Gemma4TransformerLayer)
         layer.layer_scalar = torch.tensor([0.5])
@@ -1873,7 +1924,11 @@ class TestGemma4MoEHelpers:
         router = object.__new__(Gemma4TopKRouter)
         router.per_expert_scale = torch.tensor([1.0, 2.0, 3.0])
 
-        out_probs, out_map = Gemma4TopKRouter.routing(router, torch.zeros(2, 3))
+        out_probs, out_map = Gemma4TopKRouter.routing(
+            router,
+            torch.zeros(2, 3),
+            packed_seq_params=object(),
+        )
 
         assert out_map is routing_map
         torch.testing.assert_close(out_probs[0], torch.tensor([0.4, 1.2, 0.0]))
