@@ -123,6 +123,12 @@ git add <resolved-file>
 git commit                # completes the merge commit
 ```
 
+While resolving, keep in mind:
+
+- A conflict can mean one of our patches was accepted upstream. In that case take the upstream side, and check that everything our version did is covered by it.
+- After the merge, look at `git diff main <sync-branch>`: every changed file should be either our permanent fork setup or a feature we still need. Delete anything left over from patches that upstream has replaced.
+- After the merge, `3rdparty/Megatron-LM` may show as modified — that's your stale local checkout, not a change. Run `git submodule update --init`; never `git add` it.
+
 **Step 3 — Push and open a PR** so the team can review the upstream delta:
 
 ```bash
@@ -155,11 +161,12 @@ Upstream's unit-test job lives on NVIDIA's self-hosted runners and only fires fo
 `run_tests.sh` needs the test image and two checkouts — the base (mirror or kaiko branch) and your feature branch. From your feature branch, add a sibling checkout of the base and point the script at both:
 
 ```bash
-git worktree add ../kaiko-main origin/kaiko-main    # one-time: a sibling checkout
+git worktree add ../kaiko-main origin/kaiko-main                    # one-time: a sibling checkout
+git -C ../kaiko-main submodule update --init 3rdparty/Megatron-LM   # each checkout needs its submodule
 IMAGE=nvcr.io/nvidia/nemo:26.06 tools/ci/run_tests.sh ../kaiko-main .
 ```
 
-It runs the suite inside the image with each checkout overlaid via `PYTHONPATH` (so `import megatron.bridge.*` resolves to that checkout, while `megatron.core`, `torch`, and TE come from the image — no submodule init needed), CPU-only, against a read-only mount. On Apple Silicon the image runs under amd64 emulation: the "CPU does not support AVX → illegal instruction likely" boot warning is harmless — `torch` still imports (slowly; a few minutes, then the tests run in seconds).
+It runs the suite inside the image with each checkout overlaid via `PYTHONPATH` (Bridge and Megatron-LM come from the checkout, `torch` and TE from the image), CPU-only, against a read-only mount. On Apple Silicon the image runs under amd64 emulation: the "CPU does not support AVX → illegal instruction likely" boot warning is harmless — `torch` still imports (slowly; a few minutes, then the tests run in seconds).
 
 ## Repo configuration
 
