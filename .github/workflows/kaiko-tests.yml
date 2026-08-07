@@ -8,7 +8,7 @@ on:
   # turning this job (which checks out and executes PR contents) into a token/
   # secret exfiltration vector.
   pull_request:
-    branches: [kaiko-main]
+    branches: ["kaiko-*"]
   workflow_dispatch:
 
 # Cancel superseded runs, i.e. don't let stale commits launch runs that pile up on a busy PR.
@@ -31,9 +31,9 @@ jobs:
         with:
           submodules: true
 
-      - name: Check out main as the baseline
+      - name: Check out base branch as the baseline
         run: |
-          git fetch --no-tags --depth=1 origin main
+          git fetch --no-tags --depth=1 origin ${{ github.base_ref }}
           git worktree add /tmp/base FETCH_HEAD
           git -C /tmp/base submodule update --init 3rdparty/Megatron-LM
 
@@ -58,5 +58,5 @@ jobs:
       - name: Disk after pull
         run: df -h /
 
-      - name: Run tests (regressions vs main)
+      - name: Run tests (regressions vs base)
         run: bash tools/ci/run_tests.sh /tmp/base "${GITHUB_WORKSPACE}"
