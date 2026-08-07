@@ -12,6 +12,7 @@ We want kaiko-specific Bridge patches to live as real commits (not runtime monke
 - **kaiko branches** (`kaiko-main`, `kaiko-r0.5.0`) carry our commits on top of the matching upstream base. All kaiko work lives here.
 - **Naming rule:** no `kaiko-` prefix ⇒ pristine mirror (safe to fast-forward, never touched by us). Has `kaiko-` prefix ⇒ carries our work.
 - **Contributing:** branch off a kaiko branch, PR back into it, **squash-merge**.
+- **Upstreaming:** when a patch is ready for NVIDIA, rebuild it on the `main` mirror and open a PR from this fork to `NVIDIA-NeMo/Megatron-Bridge`.
 - **Syncing upstream:** fast-forward the mirror branch from upstream, create a temporary sync branch from the corresponding kaiko branch, merge the updated mirror into the sync branch, and open a PR back into the kaiko branch. Merge the PR with a merge commit — never squash, and never rebase-and-force-push a shared branch.
 
 ## Branch model
@@ -90,7 +91,20 @@ git push --force-with-lease
 git log main..kaiko-main --oneline    # exactly our commits, nothing else
 ```
 
-After merge, bump `MEGATRON_BRIDGE_SHA` in kaiko-eng's `kmbridge-nemo` Dockerfile and ship a new image version. When ready, submit a PR to upstream (`NVIDIA-NeMo/Megatron-Bridge`).
+After merge, bump `MEGATRON_BRIDGE_SHA` in kaiko-eng's `kmbridge-nemo` Dockerfile and ship a new image version. When ready, submit the change upstream (next section).
+
+### Submitting a PR upstream
+
+Upstream can only take changes built on their `main`, not on `kaiko-main`:
+
+```bash
+git switch -c upstream-<feature> main   # branch from the pristine mirror
+git cherry-pick <sha>...                # your commits from kaiko-main
+git push -u origin upstream-<feature>
+# open PR: our fork's upstream-<feature> -> NVIDIA-NeMo/Megatron-Bridge main
+```
+
+Follow their [CONTRIBUTING.md](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/CONTRIBUTING.md): sign-off, conventional-commit title, labels; a maintainer must trigger CI (`/ok to test <sha>`). Once the change merges upstream, the fork copy retires at the next sync (see the conflict tips below).
 
 ### Syncing a kaiko branch with upstream
 
